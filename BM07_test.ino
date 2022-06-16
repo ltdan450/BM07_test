@@ -112,12 +112,6 @@ float bas[1][5];
 
 const float cutoff_freq   = 20.0;  //Cutoff frequency in Hz
 const float sampling_time = 1.0 / 50.0; //Sampling time in seconds.
-/*
-IIR::ORDER  order  = IIR::ORDER::OD2; // Order (OD1 to OD4)
-Filter f2x(cutoff_freq, sampling_time, order);
-Filter f2y(cutoff_freq, sampling_time, order);
-Filter f2z(cutoff_freq, sampling_time, order);
-*/
 
 float vals[8][3] = {0.0};   // raw values
 float mfs [8][3] = {0.0};   // fitered values
@@ -127,55 +121,14 @@ int run_mode = 0; // 0 = ready for anything, 1 = enter cal mode, 2 = cal mode ru
 
 float scratch [8 * 3 * 512] = {0};
 int scratch_user = 0;
-//float ellipsoid_cal_scratch [3 * 128] = {0};
 
+/***  Calibration variables, global ******/
+uint8_t sensor_under_cal = 64;
+int pts = 512;
+int o_step = 1;
 
-//int o_step = 1;
-
-/*
-  Filter f3x(cutoff_freq, sampling_time, order);
-  Filter f3y(cutoff_freq, sampling_time, order);
-  Filter f3z(cutoff_freq, sampling_time, order);
-  Filter f4x(cutoff_freq, sampling_time, order);
-  Filter f4y(cutoff_freq, sampling_time, order);
-  Filter f4z(cutoff_freq, sampling_time, order);
-  Filter f5x(cutoff_freq, sampling_time, order);
-  Filter f5y(cutoff_freq, sampling_time, order);
-  Filter f5z(cutoff_freq, sampling_time, order);
-  Filter f6x(cutoff_freq, sampling_time, order);
-  Filter f6y(cutoff_freq, sampling_time, order);
-  Filter f6z(cutoff_freq, sampling_time, order);
-  Filter f7x(cutoff_freq, sampling_time, order);
-  Filter f7y(cutoff_freq, sampling_time, order);
-  Filter f7z(cutoff_freq, sampling_time, order);
-  Filter f8x(cutoff_freq, sampling_time, order);
-  Filter f8y(cutoff_freq, sampling_time, order);
-  Filter f8z(cutoff_freq, sampling_time, order);
-*/
-
-
+/**** TCA9548APWR active I2c bus *****/
 uint8_t bus_number = 0;
-// Wifi
-/*
-  void connectToWiFi(const char * ssid, const char * pwd){
-  Serial.println("Connecting to WiFi network: " + String(ssid));
-
-  // delete old config
-  WiFi.disconnect(true);
-  //register event handler
-  WiFi.onEvent(WiFiEvent);
-
-  //Initiate connection
-  WiFi.begin(ssid, pwd);
-
-  Serial.println("Waiting for WIFI connection...");
-  }
-
-  //wifi event handler
-  void WiFiEvent(WiFiEvent_t event){
-  }
-*/
-
 
 
 void setup_filter(void) {
@@ -532,7 +485,7 @@ void get_sensor_vals(void) {
   IMU.readGyroscope(vals[7][0], vals[7][1], vals[7][2]);
   //Serial.printf("\nmeasurment millis:%d\n",millis()-t0);
   int t1 = millis();
-  if (1) Serial.printf("\nmeasurment loop millis:%d\n", t1 - tm0);
+  if (0) Serial.printf("\nmeasurment loop millis:%d\n", t1 - tm0);
 }
 
 void filter_sensor_vals(void) {
@@ -738,12 +691,57 @@ void filt (int n, float x, float y, float z) {
 
 }
 
+void set_ellipse_grad(float *g, float *p_in, int n){
+  float eps = 0.001;
+  float * x_buff = (float*) malloc(n * sizeof(float));
+  float err_zero = get_ellipse_error(p_in,n);
+  for (int i = 0; i<n; i++){
+    for (int j = 0; j<n; j++) { 
+      if (j==i) x_buff[j] = p_in[j]+eps;
+      else x_buff[j] = p_in[j]
+      //x_buff[j] = p_in[j] + eps * ((float)(j==i));
+      Serial.printf("i:%d j:%d pin[j]:%f xbuff[j]:%f",i,j,p_in[j],x_buff[j]);
+    }
+    g[i] = (err_zero - get_ellipse_error(x_buff,n))/eps;
+  }
+  free(x_buff);
+}
+
+float get_ellipse_error(float *p_in, int n) {
+  float a = p_in [0];
+  float b = p_in [1];
+  float c = p_in [2];
+  if (a == 0.0) a = 0.000001;
+  if (b == 0.0) b = 0.000001;
+  if (c == 0.0) c = 0.000001;
+  float x0 = p_in [3];
+  float y0 = p_in [4];
+  float z0 = p_in [5];
+  Serial.printf("\nellipse error call, a:%f, b:%f, c:%f, x0:%f, y0:%f, z0:%f ",a,b,c,x0,y0,z0);
+  float error_sum = 0.0;
+  int terms = 0;
+  for (int i = 0; i<pts; i+=o_step) {
+    terms++;
+    float x = scratch[pts*sensor_under_cal+i+0];
+    float y = scratch[pts*sensor_under_cal+i+1];
+    float z = scratch[pts*sensor_under_cal+i+2];
+
+    if (i == 5) Serial.printf(" x5:%f, y5=%f, z5=%f, ",x,y,z);
+    
+    float err = (x-x0)*(x-x0)/(a*a) + (y-y0)*(y-y0)/(b*b) + (z-z0)*(z-z0)/(c*c);
+    error_sum += (err*err); 
+    
+  }
+
+  Serial.printf(" error_sum:%f \n",error_sum);
+  return error_sum;
+}
+
+
 void cal_sensors (void) {
   Serial.println("enter cal routine");
-  int pts = 512;
 
-  //int j = 0;
-
+/****   Get sensor values, filter them, store in scratch  ****/
   for (int i = 0; i < pts; i++) {
 
     get_sensor_vals();
@@ -762,66 +760,38 @@ void cal_sensors (void) {
       delay(1);
     }
   }
-  Serial.println(" ");
-  for (int j = 0; j < 8; j++) {
-    for (int i = 0; i < pts - 1; i++) {
-      float x = scratch[j * pts * 3 + i * 3 + 0];
-      float y = scratch[j * pts * 3 + i * 3 + 1];
-      float z = scratch[j * pts * 3 + i * 3 + 2];
-      //Serial.printf("j:%d i2:%d x:%f y:%f z:%f      ", j, i, x, y, z);
-      //ellipsoid_cal_scratch[i * 3 + 0] = x;
-      //ellipsoid_cal_scratch[i * 3 + 1] = y;
-      //ellipsoid_cal_scratch[i * 3 + 2] = z;
-    }
+
+  // Go through magnetometers and calibrate
+  int n = 6;
+  float * ellipse_vals = (float*)malloc(n*sizeof(float));
+  float * ellipse_grad = (float*)malloc(n*sizeof(float));
+  for (int i = 0; i <6; i++) ellipse_vals[i] = 1.0;
+  for (int i = 0; i <6; i++) ellipse_grad[i] = 2.0;
+  for (uint8_t j = 0; j < 6; j++) {
+    sensor_under_cal = j;
+    float test_error = get_ellipse_error(ellipse_vals,n);
+    set_ellipse_grad(ellipse_grad,ellipse_vals,6);
+    for (int i=0; i<6; i++){
+      Serial.printf("\ngradi:%d val:%f",i,ellipse_grad[i]);
+      }
+
+
+
+
+
+
     //float x0 [6] = {1.0,1.0,1.0,10.0,10.0,10.0};
     //ellipse_error(x0,pts);
 
     
     Serial.print("\n");
   }
-
-  //test_opt();
-  /*
-    for (int i = 0; i<8; i++){
-    pBlocks[i] = (float*) malloc (cal_size);
-      if (pBlocks[i] != NULL){
-    }
-    else Serial.println("error in malloc");
-    }
-  */
-
-  /*
-    for (int j = 0; j<((cal_size/4)-1); j++) {
-    get_sensor_vals();
-    filter_sensor_vals();
-      for (int i = 0; i<8; i++){
-        Serial.printf("\ni:%d j:%d",i,j);
-        memcpy(&pBlocks[i]+4*j,&mfs[i][0],4*3);
-      }
-    }
-
-    for (int i = 0; i<8; i++){
-            float x,y,z = 0.0;
-            for (int j = 0; j<((cal_size/4)-1); j++) {
-              x = *(pBlocks[i]+3*4*j+4*0);
-              //y = *(pBlocks[i]+3*4*j+4*1);
-              //z = *(pBlocks[i]+3*4*j+4*2);
-              Serial.printf("\ni:%d j:%d x:%f, y:%f, z:%f",i,j,x,y,z);
-
-
-
-            }}
-
-  */
+  free(ellipse_vals);
+  free(ellipse_grad);
 
 
   delay(5000);
-  /*
-    for (int i = 7; i>=0; i--){
-      Serial.printf("\nfree block %d",i);
-      free(&pBlocks[i]);
-    }
-  */
+
 }
 
 
