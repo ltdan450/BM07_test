@@ -56,9 +56,10 @@
 #define CG_FLOAT float
 #define CG_INT int
 
-// WiFi network name and password:
+// Variables supplied by customer
 const char * networkName = "jimmy";
 const char * networkPswd = "meatball";
+const float b_earth_mag = 50.8;
 
 //IP address to send UDP data to:
 // either use the ip address of the server or
@@ -698,12 +699,16 @@ void set_ellipse_grad(float *g, float *p_in, int n){
   for (int i = 0; i<n; i++){
     for (int j = 0; j<n; j++) { 
       if (j==i) x_buff[j] = p_in[j]+eps;
-      else x_buff[j] = p_in[j]
+      else x_buff[j] = p_in[j];
       //x_buff[j] = p_in[j] + eps * ((float)(j==i));
-      Serial.printf("i:%d j:%d pin[j]:%f xbuff[j]:%f",i,j,p_in[j],x_buff[j]);
+      //Serial.printf("i:%d j:%d pin[j]:%f xbuff[j]:%f",i,j,p_in[j],x_buff[j]);
     }
-    g[i] = (err_zero - get_ellipse_error(x_buff,n))/eps;
+    g[i] = (-err_zero + get_ellipse_error(x_buff,n))/eps;
   }
+
+  Serial.printf("\nerr_z:% g:%f %f %f %f %f %f x:%f %f %f %f %f %f\n",err_zero, g[0], g[1], g[2], g[3], g[4], g[5], x_buff[0],x_buff[1], x_buff[2], x_buff[3], x_buff[4], x_buff[5]);
+
+
   free(x_buff);
 }
 
@@ -717,24 +722,25 @@ float get_ellipse_error(float *p_in, int n) {
   float x0 = p_in [3];
   float y0 = p_in [4];
   float z0 = p_in [5];
-  Serial.printf("\nellipse error call, a:%f, b:%f, c:%f, x0:%f, y0:%f, z0:%f ",a,b,c,x0,y0,z0);
+  //Serial.printf("\nellipse error call, a:%f, b:%f, c:%f, x0:%f, y0:%f, z0:%f ",a,b,c,x0,y0,z0);
   float error_sum = 0.0;
   int terms = 0;
   for (int i = 0; i<pts; i+=o_step) {
     terms++;
-    float x = scratch[pts*sensor_under_cal+i+0];
-    float y = scratch[pts*sensor_under_cal+i+1];
-    float z = scratch[pts*sensor_under_cal+i+2];
+    float x = scratch[pts*sensor_under_cal+i*3+0];
+    float y = scratch[pts*sensor_under_cal+i*3+1];
+    float z = scratch[pts*sensor_under_cal+i*3+2];
 
-    if (i == 5) Serial.printf(" x5:%f, y5=%f, z5=%f, ",x,y,z);
+    float err = ((x-x0)*(x-x0)/(a*a) + (y-y0)*(y-y0)/(b*b) + (z-z0)*(z-z0)/(c*c));
+    if (i == -5) Serial.printf("\n x5:%f, y5=%f, z5=%f, f=%f \n",x,y,z,err);
     
-    float err = (x-x0)*(x-x0)/(a*a) + (y-y0)*(y-y0)/(b*b) + (z-z0)*(z-z0)/(c*c);
     error_sum += (err*err); 
     
   }
 
-  Serial.printf(" error_sum:%f \n",error_sum);
-  return error_sum;
+  //Serial.printf(" error_sum:%f \n",error_sum);
+
+  return (error_sum/((float)terms)+fabs(a-b_earth_mag)+fabs(b-b_earth_mag)+fabs(c-b_earth_mag));
 }
 
 
@@ -772,8 +778,13 @@ void cal_sensors (void) {
     float test_error = get_ellipse_error(ellipse_vals,n);
     set_ellipse_grad(ellipse_grad,ellipse_vals,6);
     for (int i=0; i<6; i++){
-      Serial.printf("\ngradi:%d val:%f",i,ellipse_grad[i]);
+      //Serial.printf("\ngradi:%d val:%f",i,ellipse_grad[i]);
       }
+      cg_stats stats;
+      cg_descent(ellipse_vals,6,&stats,NULL,1.e-7,get_ellipse_error, set_ellipse_grad, NULL,NULL);
+      Serial.printf("\nEllipse values found:\nx0:%f,y0:%f,z0:%f,a:%f,b:%f,c:%f",ellipse_vals[3],ellipse_vals[4],ellipse_vals[5],ellipse_vals[0],ellipse_vals[1],ellipse_vals[2]);
+      Serial.printf("\n:fval:%f",stats.f);
+
 
 
 
@@ -977,8 +988,8 @@ void loop()
     */
   }
 
-  // print filtered sensor values
-  if (true) {
+  // print filtered sensor values for all sensors
+  if (false) {
     Serial.println("filtered vals:\n");
     for (int j = 0; j < 3; j++) {
       for (int i = 0; i < 8; i++) {
@@ -992,6 +1003,28 @@ void loop()
     }
   }
 
+  // print single sensor values
+  if (true) {
+    //Serial.println("filtered vals:\n");
+    for (int i = 0; i<8; i++) {
+    for (int j = 0; j < 3; j++) {
+       //int i = 0;
+        float val = mfs [i][j];
+        if (val >= 0.0) Serial.print("");
+        if (fabs(val) < 100) Serial.print("");
+        if (fabs(val) < 10) Serial.print("");
+        Serial.printf(" %f ", val);
+
+      //Serial.print("\n");
+    }
+    }
+    Serial.print("\n");
+  
+  }
+
+
+
+// x5:-131.968872, y5=160.097122, z5=-132.967499, f=1717246208.000000 
   // print loop run time
   if (false) {
     int newmillis = millis();
