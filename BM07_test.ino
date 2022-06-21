@@ -55,7 +55,7 @@
 #include <assert.h>
 #define CG_FLOAT float
 #define CG_INT int
-
+//#include <EEPROM.h>
 // Variables supplied by customer
 const char * networkName = "jimmy";
 const char * networkPswd = "meatball";
@@ -118,15 +118,19 @@ float vals[8][3] = {0.0};   // raw values
 float mfs [8][3] = {0.0};   // fitered values
 float a = 0.78;
 
+float mag_cals[8][9] = {0.0}; 
+
 int run_mode = 0; // 0 = ready for anything, 1 = enter cal mode, 2 = cal mode running
 
-float scratch [8 * 3 * 512] = {0};
-int scratch_user = 0;
+
 
 /***  Calibration variables, global ******/
 uint8_t sensor_under_cal = 64;
 int pts = 512;
 int o_step = 1;
+float scratch [8 * 3 * 512] = {0};
+int scratch_user = 0;
+  float eps = 100.0;
 
 /**** TCA9548APWR active I2c bus *****/
 uint8_t bus_number = 0;
@@ -144,7 +148,42 @@ void setup_filter(void) {
   bas[0][4] = a_0[1];
 }
 
+void rot_matrix(float ang_zyx[3], float R[3][3] ){
+  float psi = ang_zyx[0];
+  float theta = ang_zyx[1];
+  float phi = ang_zyx[2];
 
+  float spsi = sinf(psi);
+  float cpsi = cosf(psi);
+  float stheta = sinf(theta);
+  float ctheta = cosf(theta);
+  float sphi = sinf(phi);
+  float cphi = cosf(phi);
+  R[0][0] = cpsi*ctheta;  R[0][1] = cpsi*stheta*sphi-spsi*cphi; R[0][2] = cpsi*stheta*cphi+spsi*sphi;
+  R[1][0] = spsi*ctheta;  R[1][1] = spsi*stheta*sphi+cpsi*cphi; R[1][2] = spsi*stheta*cphi+cpsi*spsi;
+  R[2][0] = -stheta;      R[2][1] = ctheta*sphi;                R[2][2] = ctheta*cphi;
+
+  if(1) {
+    Serial.printf("\n Rotation matrix based on ang_zyx %f %f %f:\n", ang_zyx[0], ang_zyx[1], ang_zyx[2]);
+    for (int c = 0; c <3; c++) {
+      for (int r = 0; r<3; r++) {
+        Serial.printf("%f ",R[r][c]);
+      }
+      Serial.print("\n");
+    }
+
+
+
+  }
+
+
+}
+
+void trans_matrix(float matIn[3][3], float tmat[3][3]){
+  tmat[0][0] = matIn[0][0];   tmat[0][1] = matIn[1][0];   tmat[0][2] = matIn [2][0];
+  tmat[1][0] = matIn[0][1];   tmat[1][1] = matIn[1][1];   tmat[1][2] = matIn [2][1];
+  tmat[2][0] = matIn[0][2];   tmat[2][1] = matIn[1][2];   tmat[2][2] = matIn [2][2];
+}
 
 void TCA9548A(uint8_t bus) {
   Wire.beginTransmission(0x70);  // TCA9548A address is 0x70
@@ -492,8 +531,8 @@ void get_sensor_vals(void) {
 void filter_sensor_vals(void) {
   for (int i = 0; i < 8; i += 1) {
     for (int j = 0; j < 3; j++) {
-      mfs[i][j] = (1.0 - a) * vals[i][j] + a * mfs[i][j];
-      //Serial.printf(" raw%d_%d: %f filt%d_d: %f ",i,j,vals[i][j],j,mfs[i][j]);
+      mfs[i][j] = ((1.0 - a) * vals[i][j] + a * mfs[i][j]) ;
+      //Serial.printf("\n raw%d_%d: %f filt%d_d: %f  cal:%f\n",i,j,vals[i][j],j,mfs[i][j], mag_cals[i][j]);
     }
   }
 }
@@ -693,14 +732,13 @@ void filt (int n, float x, float y, float z) {
 }
 
 void set_ellipse_grad(float *g, float *p_in, int n){
-  float eps = 0.001;
+  //float eps = 0.001;
   float * x_buff = (float*) malloc(n * sizeof(float));
   float err_zero = get_ellipse_error(p_in,n);
   for (int i = 0; i<n; i++){
     for (int j = 0; j<n; j++) { 
       if (j==i) x_buff[j] = p_in[j]+eps;
       else x_buff[j] = p_in[j];
-      //x_buff[j] = p_in[j] + eps * ((float)(j==i));
       //Serial.printf("i:%d j:%d pin[j]:%f xbuff[j]:%f",i,j,p_in[j],x_buff[j]);
     }
     g[i] = (-err_zero + get_ellipse_error(x_buff,n))/eps;
@@ -716,6 +754,7 @@ float get_ellipse_error(float *p_in, int n) {
   float a = p_in [0];
   float b = p_in [1];
   float c = p_in [2];
+  a,b,c = b_earth_mag;
   if (a == 0.0) a = 0.000001;
   if (b == 0.0) b = 0.000001;
   if (c == 0.0) c = 0.000001;
@@ -727,12 +766,19 @@ float get_ellipse_error(float *p_in, int n) {
   int terms = 0;
   for (int i = 0; i<pts; i+=o_step) {
     terms++;
-    float x = scratch[pts*sensor_under_cal+i*3+0];
-    float y = scratch[pts*sensor_under_cal+i*3+1];
-    float z = scratch[pts*sensor_under_cal+i*3+2];
+    float x = scratch[pts*sensor_under_cal*3+i*3+0];
+    float y = scratch[pts*sensor_under_cal*3+i*3+1];
+    float z = scratch[pts*sensor_under_cal*3+i*3+2];
+
+    //float x_calc = x0 - (a*sqrt(b*b*c*c - b*b*z*z + 2 *b*b*z*z0 - b*b*z0*z0 - c*c*y*y + 2*c*c*y*y0 - c*c*y0*y0))/(b*c);
+    //float y_calc = y0 - (b*sqrt(a*a*c*c - a*a*z*z + 2 *a*a*z*z0 - a*a*z0*z0 - c*c*x*x + 2*c*c*x*x0 - c*c*x0*x0))/(a*c);
+    //float z_calc = z0 - (c*sqrt(a*a*b*b - a*a*y*y + 2 *a*a*y*y0 - a*a*y0*y0 - b*b*x*x + 2*b*b*x*x0 - b*b*x0*x0))/(a*b);
+
+
 
     float err = ((x-x0)*(x-x0)/(a*a) + (y-y0)*(y-y0)/(b*b) + (z-z0)*(z-z0)/(c*c));
-    if (i == -5) Serial.printf("\n x5:%f, y5=%f, z5=%f, f=%f \n",x,y,z,err);
+    //float err = (x-x_calc)*(x-x_calc) + (y-y_calc)*(y-y_calc) + (z-z_calc)*(z-z_calc);
+    if (i == 5) Serial.printf("\n x5:%f, y5=%f, z5=%f, f=%f \n",x,y,z,err);
     
     error_sum += (err*err); 
     
@@ -741,19 +787,101 @@ float get_ellipse_error(float *p_in, int n) {
   //Serial.printf(" error_sum:%f \n",error_sum);
 
   return (error_sum/((float)terms)+fabs(a-b_earth_mag)+fabs(b-b_earth_mag)+fabs(c-b_earth_mag));
+  //return (error_sum/((float)terms));
+}
+
+void set_sphere_grad(float *g, float *p_in, int n){
+
+  float * x_buff = (float*) malloc(n * sizeof(float));
+  float err_zero = get_sphere_error(p_in,n);
+
+  Serial.printf("\neps: %f  x:%f %f %f ez:%f    ", eps,  x_buff[0],x_buff[1], x_buff[2], err_zero );
+
+  for (int i = 0; i<n; i++){
+    for (int j = 0; j<n; j++) { 
+      if (j==i) x_buff[j] = p_in[j]+eps;
+      else x_buff[j] = p_in[j];
+      //Serial.printf("i:%d j:%d pin[j]:%f xbuff[j]:%f",i,j,p_in[j],x_buff[j]);
+    }
+    float err_x = get_sphere_error(x_buff,n);
+    Serial.printf(" f%d:%f ",i,err_x);
+    g[i] = (-err_zero + err_x)/eps;
+  }
+
+  //Serial.printf("\nerr_z:%f  G: %f %f %f  x:%f %f %f      %f    %f %f %f    %f\n",err_zero, g[0], g[1], g[2], x_buff[0],x_buff[1], x_buff[2], err_zero, err_x[0], );
+  Serial.printf(" G: %f %f %f \n", g[0], g[1], g[2]);
+
+  free(x_buff);
 }
 
 
+float get_sphere_error(float *p_in, int n) {
+  // N=3 --> just set offset
+  float error_sum = 0.0;
+  if (n==3) {
+    float x0 = p_in [0];
+    float y0 = p_in [1];
+    float z0 = p_in [2];
+    float r = b_earth_mag;
+
+    int terms = 0;
+    for (int i = 0; i<pts; i+=o_step) {
+    terms++;
+      float x = scratch[pts*sensor_under_cal*3+i*3+0];
+      float y = scratch[pts*sensor_under_cal*3+i*3+1];
+      float z = scratch[pts*sensor_under_cal*3+i*3+2];
+      float r_calc = sqrt((x-x0)*(x-x0) + (y-y0)*(y-y0) + (z-z0)*(z-z0));
+      float err = (r_calc-r)*(r_calc-r);
+      if (i == -5) Serial.printf("\n x5:%f, y5=%f, z5=%f, f=%f \n",x,y,z,err);
+      error_sum += (err*err); 
+    }
+    return (sqrt(error_sum)/((float)terms));
+  }
+  
+  /*** N=4 --> offsets plus radius  ***/
+  else if (n==4) {
+    float x0 = p_in [0];
+    float y0 = p_in [1];
+    float z0 = p_in [2];
+    float r = p_in[3];
+
+    int terms = 0;
+    for (int i = 0; i<pts; i+=o_step) {
+    terms++;
+      float x = scratch[pts*sensor_under_cal+i*3+0];
+      float y = scratch[pts*sensor_under_cal+i*3+1];
+      float z = scratch[pts*sensor_under_cal+i*3+2];
+      float r_calc = sqrt((x-x0)*(x-x0) + (y-y0)*(y-y0) + (z-z0)*(z-z0));
+      float err = (r_calc-r)*(r_calc-r);
+      if (i == -5) Serial.printf("\n x5:%f, y5=%f, z5=%f, f=%f \n",x,y,z,err);
+      error_sum += (err*err); 
+    }
+    return (error_sum/((float)terms));
+  }
+
+
+
+}
+
 void cal_sensors (void) {
   Serial.println("enter cal routine");
+  int n_sensors = 6;
+
+  //reset mag cal values
+  for (int i=0; i<8; i++) {
+    for (int j = 0; j<9; j++){
+      mag_cals[i][j] = 0.0;
+    }
+  }
 
 /****   Get sensor values, filter them, store in scratch  ****/
+  Serial.println("cal values");
   for (int i = 0; i < pts; i++) {
 
     get_sensor_vals();
     filter_sensor_vals();
-
-    for (int j = 0; j < 3; j++) {
+    // i 8 j 3 mfs[i][j] = ((1.0 - a) * vals[i][j] + a * mfs[i][j]) ;
+    for (int j = 0; j < n_sensors; j++) {
       //float x = mfs[0][0];
       //float y = mfs[0][1];
       //float z = mfs[0][2];
@@ -764,29 +892,89 @@ void cal_sensors (void) {
       scratch[j * pts * 3 + i * 3 + 2] = mfs[j][2];
       //Serial.printf("\nj:%d i:%d x:%f y:%f z:%f", j, i, mfs[j][0], mfs[j][1], mfs[j][2]);
       delay(1);
+      Serial.printf("%f %f %f ", mfs[j][0], mfs[j][1], mfs[j][2]);
     }
+    Serial.print("\n");
+
+
+
   }
 
   // Go through magnetometers and calibrate
-  int n = 6;
+  int n = 3;
   float * ellipse_vals = (float*)malloc(n*sizeof(float));
   float * ellipse_grad = (float*)malloc(n*sizeof(float));
-  for (int i = 0; i <6; i++) ellipse_vals[i] = 1.0;
-  for (int i = 0; i <6; i++) ellipse_grad[i] = 2.0;
-  for (uint8_t j = 0; j < 6; j++) {
+  int n_e = 3;
+  float f_buff;
+  float * sphere_vals = (float*)malloc(n_e*sizeof(float));
+  cg_stats stats;
+  for (int i = 0; i <n; i++) ellipse_vals[i] = 1.0;
+  for (int i = 0; i <n; i++) ellipse_grad[i] = 2.0;
+  for (int i = 0; i <n; i++) sphere_vals[i] = 1.0;
+  
+  for (uint8_t j = 0; j < n_sensors; j++) {
+    f_buff = 1000.0;
     sensor_under_cal = j;
-    float test_error = get_ellipse_error(ellipse_vals,n);
-    set_ellipse_grad(ellipse_grad,ellipse_vals,6);
-    for (int i=0; i<6; i++){
+    //float test_error = get_ellipse_error(ellipse_vals,n);
+    //set_ellipse_grad(ellipse_grad,ellipse_vals,6);
+    for (int i=0; i<5; i++){
       //Serial.printf("\ngradi:%d val:%f",i,ellipse_grad[i]);
+      f_buff = 100.0;
+      eps = .1;
       }
-      cg_stats stats;
-      cg_descent(ellipse_vals,6,&stats,NULL,1.e-7,get_ellipse_error, set_ellipse_grad, NULL,NULL);
-      Serial.printf("\nEllipse values found:\nx0:%f,y0:%f,z0:%f,a:%f,b:%f,c:%f",ellipse_vals[3],ellipse_vals[4],ellipse_vals[5],ellipse_vals[0],ellipse_vals[1],ellipse_vals[2]);
-      Serial.printf("\n:fval:%f",stats.f);
+      
+      if (0) {
+        cg_descent(ellipse_vals,6,&stats,NULL,1.e-7,get_ellipse_error, set_ellipse_grad, NULL,NULL);
+        Serial.printf("\nEllipse values found:\nx0:%f,y0:%f,z0:%f,a:%f,b:%f,c:%f",ellipse_vals[3],ellipse_vals[4],ellipse_vals[5],ellipse_vals[0],ellipse_vals[1],ellipse_vals[2]);
+        Serial.printf("\n:fval:%f eps:%f",stats.f, eps);
+        
+      }
+      if (1) {
+        while(f_buff>30.0) {
+
+          float xmin, xmax, ymin, ymax, zmin, zmax = 0.0;
+          for (int i = 0; i<pts; i+=o_step) {
+            float x = scratch[pts*sensor_under_cal*3+i*3+0];
+            float y = scratch[pts*sensor_under_cal*3+i*3+1];
+            float z = scratch[pts*sensor_under_cal*3+i*3+2];
+            if(x<xmin)xmin=x;
+            if(x>xmax)xmax=x;
+            if(y<ymin)ymin=y;
+            if(y>ymax)ymax=y;
+            if(z<zmin)zmin=z;
+            if(z>zmax)zmax=z;
+          }
+            //float x_est = (xmin + xmax)/2.0;
+            //float y_est = (ymin + ymax)/2.0;
+            //float z_est = (zmin + zmax)/2.0;
+            
+            //Serial.printf("xmin:%f xmax:%f ymin:%f ymax:%f zmax:%f zmin:%f x_est:%f, y_est:%f, z_est:%f",xmin,xmax,ymin, ymax, zmin, zmax, x_est, y_est, z_est);
+
+          //sphere_vals[0] = x_est;
+          //sphere_vals[1] = y_est;
+          //sphere_vals[2] = z_est;
 
 
+          cg_descent(sphere_vals,3,&stats,NULL,1.e-7,get_sphere_error, set_sphere_grad, NULL,NULL);
+          Serial.printf("\n sphere values found for sensor:%d \nx0:%f,y0:%f,z0:%f",j,sphere_vals[0],sphere_vals[1],sphere_vals[2]);
+          Serial.printf("\n:fval:%f eps:%f",stats.f, eps);
+          f_buff = stats.f;
+          eps *= 0.1;
+        }
+        //EEPROM.put(j*n_sensors*3*4+0*4,sphere_vals[0]);
+        //EEPROM.put(j*n_sensors*3*4+1*4,sphere_vals[1]);
+        //EEPROM.put(j*n_sensors*3*4+2*4,sphere_vals[2]);
 
+      mag_cals[j][0] = sphere_vals[0];
+      mag_cals[j][1] = sphere_vals[1];
+      mag_cals[j][2] = sphere_vals[2];
+      }
+
+      if (0) {
+        mag_cals[j][0] = mfs[j][0];
+        mag_cals[j][1] = mfs[j][1];
+        mag_cals[j][2] = mfs[j][2];
+      }
 
 
 
@@ -1009,7 +1197,7 @@ void loop()
     for (int i = 0; i<8; i++) {
     for (int j = 0; j < 3; j++) {
        //int i = 0;
-        float val = mfs [i][j];
+        float val = mfs [i][j] - mag_cals[i][j];
         if (val >= 0.0) Serial.print("");
         if (fabs(val) < 100) Serial.print("");
         if (fabs(val) < 10) Serial.print("");
