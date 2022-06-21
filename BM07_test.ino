@@ -50,7 +50,7 @@
 
 //#include <filters.h>
 //#include "Biquad.h"
-
+#include "BM_Object.h"
 #include <math.h>
 #include <assert.h>
 #define CG_FLOAT float
@@ -993,12 +993,36 @@ void cal_sensors (void) {
 
 }
 
+void testFilt (void) {
+  const int n = 500;
+  float t_meas = 10.0;
+  float f = 50;
+  BMFilt filt;
+  float * abuff = (float *) malloc(1*sizeof(float));
+  abuff[0] = 0.78;
+  filt.set_filter(0,abuff,NULL);
+  float test_data[n] = {0.0f};
+  float out_data[n] = {0.0f};
+  float f1 = 1.0;
+  float f2 = 5.0;
+  float f3 = 20.0;
+  for(int i = 0; i<n; i++){
+    float t = (float)i/(float)n*t_meas;
+    test_data[i] = 1.0 * sinf(t*f1*2*3.14) + 1.0 * sinf(t*f2*2*3.14) + 1.0 * sinf(t*f3*2*3.14);
+    out_data[i] = filt.filter_val(test_data[i]);
+    Serial.printf("\n %f %f",test_data[i],out_data[i]);
+  }
 
+
+}
 
 
 
 void setup()
 {
+    Serial.begin(115200);
+  while (!Serial); 
+  testFilt();
   Serial.println("Setup started");
   pinMode(RESET_MC, OUTPUT);
   pinMode(SW1, INPUT);
@@ -1011,8 +1035,7 @@ void setup()
 
   Wire.begin();
 
-  Serial.begin(115200);
-  while (!Serial);             // Leonardo: wait for serial monitor
+            // Leonardo: wait for serial monitor
   Serial.println("\nI2C Scanner");
   uint16_t a13 = analogRead(A13);
   Serial.printf("\n reading: %d \n", a13);
@@ -1085,11 +1108,18 @@ void loop()
     run_mode = 1;
   }
 
+  if (sw2_val && (run_mode == 0)) {
+    run_mode = 2;
+  }
+
   if (run_mode == 1) {
     cal_sensors();
     run_mode = 0;
   }
 
+  if (run_mode == 2) {
+    
+  }
 
 
   // Filter values with simple IIR filter
