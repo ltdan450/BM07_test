@@ -1016,13 +1016,30 @@ void testFilt (void) {
 
 }
 
+void testMags (void) {
+  BMObject sys = BMObject();
+  sys.pos_x = 0.0;  sys.pos_y = 0.0;  sys.pos_z = 0.0;
+  sys.rX = 0.0;     sys.rY = 0.0;     sys.rZ = 0.0;
+  BMMMC5603NJ mag1 = BMMMC5603NJ(sys,6);
+  BMQMC5883P mag2 = BMQMC5883P(sys,3);
+  mag2.config_QMC5883P();
+  while (1)
+  {
+    
+    mag2.measure();
+    Serial.printf("\n mag1 x:%f y:%f z:%f",mag2.val_x,mag2.val_y,mag2.val_z);
+    delay(500);
+  }
+  
+
+
+}
 
 
 void setup()
 {
     Serial.begin(115200);
   while (!Serial); 
-  testFilt();
   Serial.println("Setup started");
   pinMode(RESET_MC, OUTPUT);
   pinMode(SW1, INPUT);
@@ -1034,6 +1051,10 @@ void setup()
   digitalWrite(RESET_MC, HIGH);
 
   Wire.begin();
+
+  testFilt();
+  testMags();
+
 
             // Leonardo: wait for serial monitor
   Serial.println("\nI2C Scanner");

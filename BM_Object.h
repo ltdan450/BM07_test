@@ -4,6 +4,7 @@
 
 #include <Wire.h>
 
+
 class BMObject {
     public:
         float pos_x, pos_y, pos_z;
@@ -149,6 +150,7 @@ class BMFilt {
         float * b;
         float * x;
         float * y;
+        bool init = false;
         void set_filter(int order, const float a_in[], float b_in[]){
             if(order == 0){
                 a = (float *) malloc((order+1)*sizeof(float));
@@ -157,9 +159,19 @@ class BMFilt {
                 //mfs[i][j] = ((1.0 - a) * vals[i][j] + a * mfs[i][j]) ;
                 y = (float *) malloc((order+1)*sizeof(float));
                 x = (float *) malloc((order+1)*sizeof(float));
+                init = false;
             }
         }
+
         float filter_val (float val_in) {
+
+            if (init == false) {
+                init = true;
+                for (int i = 0; i<1000; i++)  {
+                    this->filter_val(val_in);
+                }
+            }
+
             if(filt_order == 0) {
                 x[0] = val_in;
                 y[0] = (1.0 - a[0]) * val_in + a[0] * y[0];
@@ -180,11 +192,17 @@ class BMSensor: public BMObject {
         float val_x;
         float val_y;
         float val_z;
+        float val_x_raw;
+        float val_y_raw;
+        float val_z_raw;
 
         
 
         BMSensor(BMObject ref_in, uint8_t i2cbus_in, int i2c_address_in){
             static const float as[1] = {0.78};
+            x_filter = BMFilt();
+            y_filter = BMFilt();
+            z_filter = BMFilt();
             x_filter.set_filter(0,as,NULL);
             y_filter.set_filter(0,as,NULL);
             z_filter.set_filter(0,as,NULL);
@@ -270,13 +288,90 @@ class BMMMC5603NJ: public BMMagnetometer {
             inbuff[i] = Wire.read();
             }
 
-            float xval = (float)(((inbuff[0] << 12) | (inbuff[1] << 4) | (inbuff[6] >> 4)) - 524288) * 0.00006103515625f * 100.0f;
-            float yval = (float)(((inbuff[2] << 12) | (inbuff[3] << 4) | (inbuff[7] >> 4)) - 524288) * 0.00006103515625f * 100.0f;
-            float zval = (float)(((inbuff[4] << 12) | (inbuff[5] << 4) | (inbuff[8] >> 4)) - 524288) * 0.00006103515625f * 100.0f;
+            val_x_raw = (float)(((inbuff[0] << 12) | (inbuff[1] << 4) | (inbuff[6] >> 4)) - 524288) * 0.00006103515625f * 100.0f;
+            val_y_raw = (float)(((inbuff[2] << 12) | (inbuff[3] << 4) | (inbuff[7] >> 4)) - 524288) * 0.00006103515625f * 100.0f;
+            val_z_raw = (float)(((inbuff[4] << 12) | (inbuff[5] << 4) | (inbuff[8] >> 4)) - 524288) * 0.00006103515625f * 100.0f;
 
-            val_x = x_filter.filter_val(xval);
-            val_y = y_filter.filter_val(xval);
-            val_z = z_filter.filter_val(xval);
+            val_x = x_filter.filter_val(val_x_raw);
+            val_y = y_filter.filter_val(val_y_raw);
+            val_z = z_filter.filter_val(val_z_raw);
+
+            //Serial.printf("\n %f %f %f %f %f %f",val_x, val_y, val_z, val_x_raw, val_y_raw, val_z_raw);
+        }
+
+
+
+
+
+};
+
+
+class BMQMC5883P: public BMMagnetometer {
+    //QMC5883 constants
+    #define QMC5883P_ADDR 0b00101100
+
+    #define QMC5883P_CR1 0x0A
+    #define QMC5883P_CR2 0x0B
+    #define QMC5883P_sign 0x29
+
+    #define QMC5883P_CR1_config  0b00000110
+    #define QMC5883P_CR2_config  0b01001100
+    #define QMC5883P_sign_config  0x06
+
+
+    #define MMC5603_CR0_config_1 0x21 // m measuring enable with auto-reset (0010 0001)
+    #define Device_Status1 0x18
+
+    public:
+
+
+        uint8_t i2c_addr = QMC5883P_ADDR;
+        uint8_t output_addr = 0x01;
+        uint8_t inbuff [9];
+
+        BMQMC5883P(BMObject ref_in, uint8_t i2cbus_in) :
+            BMMagnetometer(ref_in,i2cbus_in,QMC5883P_ADDR){
+        }
+
+        void config_QMC5883P () {
+            TCA9548A();
+            Wire.beginTransmission(i2c_addr);
+            Wire.write(QMC5883P_CR2);
+            Wire.write(QMC5883P_CR2_config); //Set signal
+            Wire.endTransmission();
+
+            Wire.beginTransmission(i2c_addr);
+            Wire.write(QMC5883P_sign);
+            Wire.write(QMC5883P_sign_config); //Set signal
+            Wire.endTransmission();
+
+        }
+        
+        void measure (){
+            byte error;
+            TCA9548A();
+            Wire.beginTransmission(i2c_addr);
+            Wire.write(QMC5883P_CR1);
+            Wire.write(QMC5883P_CR1_config); 
+            error = Wire.endTransmission();
+
+            Wire.beginTransmission(i2c_addr);
+            Wire.write(output_addr);
+            Wire.endTransmission();
+            Wire.requestFrom(i2c_addr, 6, true);
+            for (int i = 0; i < 9; i++) {
+            inbuff[i] = Wire.read();
+            }
+
+            val_x_raw = (float)(((inbuff[1] << 8) | (inbuff[0] << 0)) - 32768) * 0.000066666666666666666f * 100.0f;
+            val_y_raw = (float)(((inbuff[3] << 8) | (inbuff[2] << 0)) - 32768) * 0.000066666666666666666f * 100.0f;
+            val_z_raw = (float)(((inbuff[5] << 8) | (inbuff[4] << 0)) - 32768) * 0.000066666666666666666f * 100.0f;
+
+            val_x = x_filter.filter_val(val_x_raw);
+            val_y = y_filter.filter_val(val_y_raw);
+            val_z = z_filter.filter_val(val_z_raw);
+
+            //Serial.printf("\n %f %f %f %f %f %f",val_x, val_y, val_z, val_x_raw, val_y_raw, val_z_raw);
         }
 
 
