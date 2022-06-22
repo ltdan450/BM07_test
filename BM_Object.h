@@ -1,9 +1,12 @@
 #ifndef BMObject_h
 #define BMObject_h
 #define PID4 0.785398163397448
+
+#include <Wire.h>
+
 class BMObject {
     public:
-        float x,y,z;
+        float pos_x, pos_y, pos_z;
         float rZ,rY,rX; 
         
         float Sqrt31f (float x) {
@@ -27,8 +30,6 @@ class BMObject {
             }
             return y;
         }
-
-
 
 };
 
@@ -148,7 +149,7 @@ class BMFilt {
         float * b;
         float * x;
         float * y;
-        void set_filter(int order, float * a_in, float * b_in){
+        void set_filter(int order, const float a_in[], float b_in[]){
             if(order == 0){
                 a = (float *) malloc((order+1)*sizeof(float));
                 b = (float *) malloc((order+1)*sizeof(float));
@@ -160,6 +161,7 @@ class BMFilt {
         }
         float filter_val (float val_in) {
             if(filt_order == 0) {
+                x[0] = val_in;
                 y[0] = (1.0 - a[0]) * val_in + a[0] * y[0];
             }
             return y[0];
@@ -169,9 +171,38 @@ class BMFilt {
 class BMSensor: public BMObject {
     public:
         uint8_t i2cbus;
-       
+        uint8_t i2c_addr;
+        uint8_t output_addr;
+        BMFilt x_filter;
+        BMFilt y_filter;
+        BMFilt z_filter;
         BMObject ref;
+        float val_x;
+        float val_y;
+        float val_z;
 
+        
+
+        BMSensor(BMObject ref_in, uint8_t i2cbus_in, int i2c_address_in){
+            static const float as[1] = {0.78};
+            x_filter.set_filter(0,as,NULL);
+            y_filter.set_filter(0,as,NULL);
+            z_filter.set_filter(0,as,NULL);
+            ref = ref_in;
+            i2cbus = i2cbus_in;
+            i2c_addr = i2c_address_in;
+        }
+
+        void measure (void) {
+            Serial.println("need to implement overridden measure function in subclass");
+        }
+
+    protected:
+        void TCA9548A(void) {
+            Wire.beginTransmission(0x70);  // TCA9548A address is 0x70
+            Wire.write(1 << i2cbus);          // send byte to select bus
+            Wire.endTransmission();
+        }
 
 
 
@@ -179,9 +210,80 @@ class BMSensor: public BMObject {
 
 class BMMagnetometer: public BMSensor {
     public:
-        int i2cbus;
-        float bx_filt, by_filt, bz_filt;
+
+        float ctr [3] = {0.0};
+
+
+        BMMagnetometer(BMObject ref_in, uint8_t i2cbus_in, int i2c_address_in) :
+            BMSensor(ref_in,i2cbus_in,i2c_address_in){
+
+        };
+
+        void calibrate(float*x_in, float*y_in, float*z_in, int n, int method) {
+            // sphere fitting method optoins
+            if (method == 1) {
+
+            }
+
+        }
+
+
+
 
 };
+
+class BMMMC5603NJ: public BMMagnetometer {
+    //MMC5603NJ constants
+    #define MMC5603NJ_ADDR 0b00110000
+    #define MMC5603_CR0 0x1B
+    #define MMC5603_CR1 0x1C
+    #define MMC5603_CR2 0x1D
+    #define MMC5603_ODR 0x1A
+    #define MMC5603_Stat1 0x18
+
+    #define MMC5603_CR0_config_1 0x21 // m measuring enable with auto-reset (0010 0001)
+    #define Device_Status1 0x18
+
+    public:
+
+        uint8_t i2c_addr = MMC5603NJ_ADDR;
+        uint8_t output_addr = 0x00;
+        uint8_t inbuff [9];
+
+        BMMMC5603NJ(BMObject ref_in, uint8_t i2cbus_in) :
+            BMMagnetometer(ref_in,i2cbus_in,MMC5603NJ_ADDR){
+        }
+
+        void measure (){
+            byte error;
+            TCA9548A();
+            Wire.beginTransmission(i2c_addr);
+            Wire.write(MMC5603_CR0);
+            Wire.write(MMC5603_CR0_config_1); 
+            error = Wire.endTransmission();
+
+            Wire.beginTransmission(i2c_addr);
+            Wire.write(output_addr);
+            Wire.endTransmission();
+            Wire.requestFrom(i2c_addr, 9, true);
+            for (int i = 0; i < 9; i++) {
+            inbuff[i] = Wire.read();
+            }
+
+            float xval = (float)(((inbuff[0] << 12) | (inbuff[1] << 4) | (inbuff[6] >> 4)) - 524288) * 0.00006103515625f * 100.0f;
+            float yval = (float)(((inbuff[2] << 12) | (inbuff[3] << 4) | (inbuff[7] >> 4)) - 524288) * 0.00006103515625f * 100.0f;
+            float zval = (float)(((inbuff[4] << 12) | (inbuff[5] << 4) | (inbuff[8] >> 4)) - 524288) * 0.00006103515625f * 100.0f;
+
+            val_x = x_filter.filter_val(xval);
+            val_y = y_filter.filter_val(xval);
+            val_z = z_filter.filter_val(xval);
+        }
+
+
+
+
+
+};
+
 
 #endif
