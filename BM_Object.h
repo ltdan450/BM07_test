@@ -1,7 +1,7 @@
 #ifndef BMObject_h
 #define BMObject_h
 #define PID4 0.785398163397448
-
+#include <Arduino_LSM6DS3.h>
 #include <Wire.h>
 
 
@@ -195,8 +195,12 @@ class BMSensor: public BMObject {
         float val_x_raw;
         float val_y_raw;
         float val_z_raw;
-
-        
+        float val_x_offset;
+        float val_y_offset;
+        float val_z_offset;
+        float x_offset=0.0;
+        float y_offset=0.0;
+        float z_offset=0.0;
 
         BMSensor(BMObject ref_in, uint8_t i2cbus_in, int i2c_address_in){
             static const float as[1] = {0.78};
@@ -215,14 +219,26 @@ class BMSensor: public BMObject {
             Serial.println("need to implement overridden measure function in subclass");
         }
 
+        void set_offsets(int n_samples){
+            float x_sum, y_sum, z_sum = 0.0f;
+            for (int i = 0; i<n_samples; i++) {
+                measure();
+                x_sum+=val_x;
+                y_sum+=val_y;
+                z_sum+=val_z;
+                delay(5);
+            }
+            x_offset = x_sum / (float) n_samples;
+            y_offset = y_sum / (float) n_samples;
+            z_offset = z_sum / (float) n_samples;
+        }
+
     protected:
-        void TCA9548A(void) {
+        void select_bus(void) {
             Wire.beginTransmission(0x70);  // TCA9548A address is 0x70
             Wire.write(1 << i2cbus);          // send byte to select bus
             Wire.endTransmission();
         }
-
-
 
 };
 
@@ -231,13 +247,12 @@ class BMMagnetometer: public BMSensor {
 
         float ctr [3] = {0.0};
 
-
         BMMagnetometer(BMObject ref_in, uint8_t i2cbus_in, int i2c_address_in) :
             BMSensor(ref_in,i2cbus_in,i2c_address_in){
 
         };
 
-        void calibrate(float*x_in, float*y_in, float*z_in, int n, int method) {
+        void calibrate(float*xyz_in,  int n, int method) {
             // sphere fitting method optoins
             if (method == 1) {
 
@@ -274,7 +289,7 @@ class BMMMC5603NJ: public BMMagnetometer {
 
         void measure (){
             byte error;
-            TCA9548A();
+            select_bus();
             Wire.beginTransmission(i2c_addr);
             Wire.write(MMC5603_CR0);
             Wire.write(MMC5603_CR0_config_1); 
@@ -296,15 +311,14 @@ class BMMMC5603NJ: public BMMagnetometer {
             val_y = y_filter.filter_val(val_y_raw);
             val_z = z_filter.filter_val(val_z_raw);
 
+            val_x_offset = val_x - x_offset;
+            val_y_offset = val_y - y_offset;
+            val_z_offset = val_z - z_offset;
+
             //Serial.printf("\n %f %f %f %f %f %f",val_x, val_y, val_z, val_x_raw, val_y_raw, val_z_raw);
         }
 
-
-
-
-
 };
-
 
 class BMQMC5883P: public BMMagnetometer {
     //QMC5883 constants
@@ -334,7 +348,7 @@ class BMQMC5883P: public BMMagnetometer {
         }
 
         void config_QMC5883P () {
-            TCA9548A();
+            select_bus();
             Wire.beginTransmission(i2c_addr);
             Wire.write(QMC5883P_CR2);
             Wire.write(QMC5883P_CR2_config); //Set signal
@@ -349,7 +363,7 @@ class BMQMC5883P: public BMMagnetometer {
         
         void measure (){
             byte error;
-            TCA9548A();
+            select_bus();
             Wire.beginTransmission(i2c_addr);
             Wire.write(QMC5883P_CR1);
             Wire.write(QMC5883P_CR1_config); 
@@ -371,14 +385,57 @@ class BMQMC5883P: public BMMagnetometer {
             val_y = y_filter.filter_val(val_y_raw);
             val_z = z_filter.filter_val(val_z_raw);
 
+            val_x_offset = val_x - x_offset;
+            val_y_offset = val_y - y_offset;
+            val_z_offset = val_z - z_offset;
+
+
             //Serial.printf("\n %f %f %f %f %f %f",val_x, val_y, val_z, val_x_raw, val_y_raw, val_z_raw);
         }
-
-
-
-
-
 };
 
+class LSM6DS3_Accelerometer: public BMSensor {
+    public:
+
+        void setup (void) {
+            if (!IMU.begin()) {
+            Serial.println("Failed to initialize IMU!");
+            while (1);
+            }
+        }
+
+        void measure (void) {
+            IMU.readAcceleration(val_x_raw, val_y_raw, val_z_raw);
+            val_x = x_filter.filter_val(val_x_raw);
+            val_y = y_filter.filter_val(val_y_raw);
+            val_z = z_filter.filter_val(val_z_raw);
+
+            val_x_offset = val_x - x_offset;
+            val_y_offset = val_y - y_offset;
+            val_z_offset = val_z - z_offset;
+        }
+};
+
+class LSM6DS3_Gyroscope: public BMSensor {
+    public:
+
+        void setup (void) {
+            if (!IMU.begin()) {
+            Serial.println("Failed to initialize IMU!");
+            while (1);
+            }
+        }
+
+        void measure (void) {
+            IMU.readGyroscope(val_x_raw, val_y_raw, val_z_raw);
+            val_x = x_filter.filter_val(val_x_raw);
+            val_y = y_filter.filter_val(val_y_raw);
+            val_z = z_filter.filter_val(val_z_raw);
+
+            val_x_offset = val_x - x_offset;
+            val_y_offset = val_y - y_offset;
+            val_z_offset = val_z - z_offset;
+        }
+};
 
 #endif

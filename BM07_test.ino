@@ -99,7 +99,7 @@ boolean connected = false;
 //Biquad bqz2 = Biquad();//int type, double Fc, double Q, double peakGainDB);
 //bqz2->setFC(0.1);
 
-
+//float * dog = (float*)heap_caps_malloc(4,4);
 // Setup QMC5883L
 uint8_t QMC5883_CR1_config = 0b00000110;
 uint8_t QMC5883_CR2_config = 0b01001100;
@@ -813,8 +813,6 @@ void set_sphere_grad(float *g, float *p_in, int n){
 
   free(x_buff);
 }
-
-
 float get_sphere_error(float *p_in, int n) {
   // N=3 --> just set offset
   float error_sum = 0.0;
