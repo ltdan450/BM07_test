@@ -7,8 +7,8 @@
 
 class BMObject {
     public:
-        float pos_x, pos_y, pos_z;
-        float rZ,rY,rX; 
+        float pos_x, pos_y, pos_z = 0.0f;
+        float rZ,rY,rX = 0.0f; 
         
         float Sqrt31f (float x) {
             int i = *(int*)&x;
@@ -215,6 +215,19 @@ class BMSensor: public BMObject {
             i2c_addr = i2c_address_in;
         }
 
+        BMSensor(BMObject ref_in){
+            static const float as[1] = {0.78};
+            x_filter = BMFilt();
+            y_filter = BMFilt();
+            z_filter = BMFilt();
+            x_filter.set_filter(0,as,NULL);
+            y_filter.set_filter(0,as,NULL);
+            z_filter.set_filter(0,as,NULL);
+            ref = ref_in;
+        }
+
+
+
         void measure (void) {
             Serial.println("need to implement overridden measure function in subclass");
         }
@@ -394,9 +407,13 @@ class BMQMC5883P: public BMMagnetometer {
         }
 };
 
-class LSM6DS3_Accelerometer: public BMSensor {
+class BMLSM6DS3_Accelerometer: public BMSensor {
     public:
 
+        BMLSM6DS3_Accelerometer(BMObject ref_in):BMSensor(ref_in) {
+            ref = ref_in;
+        }
+        
         void setup (void) {
             if (!IMU.begin()) {
             Serial.println("Failed to initialize IMU!");
@@ -416,8 +433,12 @@ class LSM6DS3_Accelerometer: public BMSensor {
         }
 };
 
-class LSM6DS3_Gyroscope: public BMSensor {
+class BMLSM6DS3_Gyroscope: public BMSensor {
     public:
+
+        BMLSM6DS3_Gyroscope(BMObject ref_in):BMSensor(ref_in) {
+            ref = ref_in;
+        }
 
         void setup (void) {
             if (!IMU.begin()) {
