@@ -1014,93 +1014,15 @@ void testFilt (void) {
 
 }
 
-void testMags (void) {
-
-  BMObject sysref = BMObject();
-  sysref.pos_x = 0.0;  sysref.pos_y = 0.0;  sysref.pos_z = 0.0;
-  sysref.rX = 0.0;     sysref.rY = 0.0;     sysref.rZ = 0.0;
+void testSys (void) {
   
-  BMMMC5603NJ mag1 = BMMMC5603NJ(sysref,6);
-  mag1.pos_x = -.0429125; mag1.pos_y = 0.0;   mag1.pos_z = 0.0;
+  BMSystem sys = BMSystem(1,BMCS());
 
-  BMMMC5603NJ mag2 = BMMMC5603NJ(sysref,4);
-  mag2.pos_x = 0.0875; mag2.pos_y = 0.065;   mag2.pos_z = 0.0;
-
-  //BMMMC5603NJ mag3 = BMMMC5603NJ(sysref,6);
-  //mag1.pos_x = -.0429125; mag1.pos_y = 0.0;   mag1.pos_z = 0.0;
-
-  BMMMC5603NJ mag4 = BMMMC5603NJ(sysref,2);
-  mag4.pos_x = -0.0440875; mag1.pos_y = -0.0006;   mag1.pos_z = 0.0;
-
-
-  BMQMC5883P mag5 = BMQMC5883P(sysref,7);
-  mag5.pos_x = 0.08815; mag5.pos_y = -0.06744;   mag5.pos_z = 0.0;
-  mag5.config_QMC5883P();
-
-  BMQMC5883P mag6 = BMQMC5883P(sysref,5);
-  mag6.pos_x = 0.165; mag6.pos_y = -0.040;   mag6.pos_z = 0.0;
-  mag6.config_QMC5883P();
-
-  BMQMC5883P mag7 = BMQMC5883P(sysref,3);
-  mag7.pos_x = 0.165; mag7.pos_y = -0.120;   mag7.pos_z = 0.0;
-  mag7.config_QMC5883P();
-
-  BMLSM6DS3_Accelerometer acc = BMLSM6DS3_Accelerometer(sysref);
-  acc.setup();
-
-  // Do not run setup on gyr -> it's the same device as acc
-  BMLSM6DS3_Gyroscope gyr = BMLSM6DS3_Gyroscope(sysref);
-
-  BMSensor * sensors [8] = {&mag1, &mag2, &mag4, &mag5, &mag6, &acc, &gyr};
-
-  while(1) {
-    int t0 = millis();
-
-    mag1.measure();
-    mag2.measure();
-    mag4.measure();
-    mag5.measure();
-    mag6.measure();
-    mag7.measure();
-    acc.measure();
-    gyr.measure();
-
-    int t1 = millis();
-    
-    Serial.printf("\nmag1    x:%f    y:%f    z:%f", mag1.val_x, mag1.val_y, mag1.val_z);
-    Serial.printf("\nmag2    x:%f    y:%f    z:%f", mag2.val_x, mag2.val_y, mag2.val_z);
-    Serial.printf("\nmag4    x:%f    y:%f    z:%f", mag4.val_x, mag4.val_y, mag4.val_z);
-    Serial.printf("\nmag5    x:%f    y:%f    z:%f", mag5.val_x, mag5.val_y, mag5.val_z);
-    Serial.printf("\nmag6    x:%f    y:%f    z:%f", mag6.val_x, mag6.val_y, mag6.val_z);
-    Serial.printf("\nmag7    x:%f    y:%f    z:%f", mag7.val_x, mag7.val_y, mag7.val_z);
-    Serial.printf("\nacc    x:%f    y:%f    z:%f", acc.val_x, acc.val_y, acc.val_z);
-    Serial.printf("\ngyr    x:%f    y:%f    z:%f", gyr.val_x, gyr.val_y, gyr.val_z);
-
-    Serial.printf("\nmeasurement loop millis:%d",t1-t0);
-    delay(1000);
-  }
-  
-
-
-  //BMQMC5883P mag = BMQMC5883P(sys,);
-  //mag.pos_x = -0.0440875; mag.pos_y = -0.0006;   mag.pos_z = 0.0;
-  //mag.config_QMC5883P();
-
-
-
-
-  while (1)
-  {
-    
-    mag2.measure();
-    Serial.printf("\n mag1 x:%f y:%f z:%f",mag2.val_x,mag2.val_y,mag2.val_z);
-    delay(500);
-  }
-  
+  sys.test_mx_time();
+  sys.mag_test_2();
 
 
 }
-
 
 void setup()
 {
@@ -1118,8 +1040,9 @@ void setup()
 
   Wire.begin();
 
-  testFilt();
-  testMags();
+  //testFilt();
+  testSys();
+  //testMags();
 
 
             // Leonardo: wait for serial monitor
