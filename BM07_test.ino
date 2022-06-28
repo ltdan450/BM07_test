@@ -1026,7 +1026,7 @@ void testSys (void) {
 
 void setup()
 {
-    Serial.begin(115200);
+    Serial.begin(230400);
   while (!Serial); 
   Serial.println("Setup started");
   pinMode(RESET_MC, OUTPUT);

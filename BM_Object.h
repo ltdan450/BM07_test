@@ -435,10 +435,13 @@ class BMQMC5883P: public BMMagnetometer {
 
     #define QMC5883P_CR1 0x0A
     #define QMC5883P_CR2 0x0B
+
+
     #define QMC5883P_sign 0x29
 
     #define QMC5883P_CR1_config  0b00000110
     #define QMC5883P_CR2_config  0b01001100
+    //#define QMC5883P_CR2_config  0b01001100
     #define QMC5883P_sign_config  0x06
 
 
@@ -487,9 +490,15 @@ class BMQMC5883P: public BMMagnetometer {
             inbuff[i] = Wire.read();
             }
             // values are in milliguass
-            val_x_raw = (float)(((inbuff[1] << 8) | (inbuff[0] << 0)) - 32768) * 0.000066666666666666666f * 1000.0f;
-            val_y_raw = (float)(((inbuff[3] << 8) | (inbuff[2] << 0)) - 32768) * 0.000066666666666666666f * 1000.0f;
-            val_z_raw = (float)(((inbuff[5] << 8) | (inbuff[4] << 0)) - 32768) * 0.000066666666666666666f * 1000.0f;
+            val_x_raw = (float)((int16_t)((inbuff[1] << 8) | (inbuff[0] << 0))) * 0.000066666666666666666f * 1000.0f;
+            val_y_raw = (float)((int16_t)((inbuff[3] << 8) | (inbuff[2] << 0))) * 0.000066666666666666666f * 1000.0f;
+            val_z_raw = (float)((int16_t)((inbuff[5] << 8) | (inbuff[4] << 0))) * 0.000066666666666666666f * 1000.0f;
+
+            //val_x_raw = (float)(((inbuff[1] << 8) | (inbuff[0] << 0)) - 32768) * 0.000066666666666666666f * 1000.0f;
+            //val_y_raw = (float)(((inbuff[3] << 8) | (inbuff[2] << 0)) - 32768) * 0.000066666666666666666f * 1000.0f;
+            //val_z_raw = (float)(((inbuff[5] << 8) | (inbuff[4] << 0)) - 32768) * 0.000066666666666666666f * 1000.0f;
+            //int16_t val = ((inbuff[1] << 8) | (inbuff[0] << 0));
+            //Serial.printf("\n %d  %d %d \n", inbuff[1], inbuff[0], val);
 
             val_x = x_filter.filter_val(val_x_raw);
             val_y = y_filter.filter_val(val_y_raw);
@@ -583,7 +592,7 @@ class BMSystem: public BMObject {
                 //mag1.cs.x = -.0429125; mag1.cs.y = 0.0;   mag1.cs.z = 0.0;
 
                 mag4 = BMMMC5603NJ(BMCS(),2);
-                mag4.cs.x = -0.0440875; mag4.cs.y = -0.0006;   mag4.cs.z = 0.0;
+                mag4.cs.x = 0.0440875; mag4.cs.y = -0.0006;   mag4.cs.z = 0.0;
 
                 mag5 = BMQMC5883P(BMCS(),7);
                 mag5.cs.x = -0.0125; mag5.cs.y = -0.0209;   mag5.cs.z = 0.0;
@@ -749,7 +758,7 @@ class BMSystem: public BMObject {
             //testmag.BZTest1();
             delay(5000);
 
-            magnet = BMRectPM(BMCS(),0.0381, 0.01265, 0.00325,957560.5428);
+            magnet = BMRectPM(BMCS(),0.0381, 0.01265, 0.00325, 981500.0);
             //magnet.cs.x = 0.000;    magnet.cs.y = 0.171;        magnet.cs.z = 0.00325/2.0;
             //magnet.cs.rx = 90.0;    magnet.cs.ry = 0.0;         magnet.cs.rz = 0.0;
             //magnet.BZTest1();
@@ -825,7 +834,13 @@ class BMSystem: public BMObject {
                     b_calc_m[1] = magnet.By(magPos_m_buff[0], magPos_m_buff[1], magPos_m_buff[2]);
                     b_calc_m[2] = magnet.Bz(magPos_m_buff[0], magPos_m_buff[1], magPos_m_buff[2]);
                     rot_vector(b_calc_m, b_calc, RMag);
-                    Serial.printf("\nsensor %d: xcalc:%f xmeas:%f    ycalc:%f ymeas:%f    zcalc:%f zmeas:%f",i, b_calc[0], b_meas[i][0],b_calc[1], b_meas[i][1], b_calc[2], b_meas[i][2]);
+
+                    // mag5 readings (on this particular board) anamalous, skip it for now
+                    // mag 6 has strange behavior
+                    if(i<7){
+                        Serial.printf("\nsensor %d: xcalc:%f xmeas:%f    ycalc:%f ymeas:%f    zcalc:%f zmeas:%f",i+1, b_calc[0], b_meas[i][0],b_calc[1], b_meas[i][1], b_calc[2], b_meas[i][2]);
+                        Serial.printf("  xyz = %f %f %f ",magPos_m_buff[0], magPos_m_buff[1], magPos_m_buff[2]);
+                    }
                 }
 
                 //magPos_buff[0] = mag2.cs.x - magnet.cs.x;   magPos_buff[0] = mag2.cs.x - magnet.cs.x;   
