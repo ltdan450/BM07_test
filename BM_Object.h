@@ -4,6 +4,9 @@
 #include <Arduino_LSM6DS3.h>
 #include <Wire.h>
 
+#include "matrix.h"
+
+
 class BMCS {
     public:
         float x,y,z = 0.0f;
@@ -574,6 +577,7 @@ class BMSystem: public BMObject {
         BMLSM6DS3_Accelerometer acc;
         BMLSM6DS3_Gyroscope gyr;
         BMRectPM magnet;
+        Matrix J;
 
 
 
@@ -611,7 +615,11 @@ class BMSystem: public BMObject {
                 acc.setup();
                 // Do not run setup on gyr -> it's the same device as acc
                 gyr = BMLSM6DS3_Gyroscope(BMCS());
-                gyr.cs.x = 0.0; gyr.cs.y = 0.0; gyr.cs.z = 0.0;      
+                gyr.cs.x = 0.0; gyr.cs.y = 0.0; gyr.cs.z = 0.0;    
+
+                J = Matrix(3,3);
+                J = J.createIdentity(3);
+                
             }
         }
 
