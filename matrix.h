@@ -45,6 +45,9 @@ class Matrix {
         void readSolutionsFromRREF(std::ostream& os);
         Matrix inverse();
 
+        // helper functinos
+        int printMatrix();
+
     private:
         int rows_, cols_;
         float **p;

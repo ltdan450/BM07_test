@@ -396,7 +396,7 @@ class BMMMC5603NJ: public BMMagnetometer {
             BMMagnetometer(cs_in,i2cbus_in,MMC5603NJ_ADDR){
         }
 
-        void measure (){
+        void measure () override {
             byte error;
             select_bus();
             Wire.beginTransmission(i2c_addr);
@@ -477,7 +477,7 @@ class BMQMC5883P: public BMMagnetometer {
 
         }
         
-        void measure (){
+        void measure () override {
             byte error;
             select_bus();
             Wire.beginTransmission(i2c_addr);
@@ -530,7 +530,7 @@ class BMLSM6DS3_Accelerometer: public BMSensor {
             }
         }
 
-        void measure (void) {
+        void measure () override {
             IMU.readAcceleration(val_x_raw, val_y_raw, val_z_raw);
             val_x = x_filter.filter_val(val_x_raw);
             val_y = y_filter.filter_val(val_y_raw);
@@ -556,7 +556,7 @@ class BMLSM6DS3_Gyroscope: public BMSensor {
             }
         }
 
-        void measure (void) {
+        void measure (void) override {
             IMU.readGyroscope(val_x_raw, val_y_raw, val_z_raw);
             val_x = x_filter.filter_val(val_x_raw);
             val_y = y_filter.filter_val(val_y_raw);
@@ -578,12 +578,18 @@ class BMSystem: public BMObject {
         BMLSM6DS3_Gyroscope gyr;
         BMRectPM magnet;
         Matrix J;
-
+        float b_meas[6][3];
+        //float trial_pos_buff[3];
+        //float trial_orientation_buff[3];
+        BMCS trial_cs;
+        float R [3][3];
+        float R_T [3][3];
 
 
         BMSystem(){}
         BMSystem(int config, BMCS cs_in){
             cs = cs_in;
+            trial_cs = BMCS();
             if (config == 1) {
 
                 mag1 = BMMMC5603NJ(BMCS(),6);
@@ -619,6 +625,8 @@ class BMSystem: public BMObject {
 
                 J = Matrix(3,3);
                 J = J.createIdentity(3);
+                //J.printMatrix();
+                delay(1000);
                 
             }
         }
@@ -696,6 +704,63 @@ class BMSystem: public BMObject {
             xyz_out [0] = R[0][0] * xyz_in[0] + R[0][1] * xyz_in[1] + R[0][2] * xyz_in[2];
             xyz_out [1] = R[1][0] * xyz_in[0] + R[1][1] * xyz_in[1] + R[1][2] * xyz_in[2];
             xyz_out [2] = R[2][0] * xyz_in[0] + R[2][1] * xyz_in[1] + R[2][2] * xyz_in[2];
+        }
+
+        void take_measurements(){
+                mag1.measure();
+                mag2.measure();
+                mag4.measure();
+                mag5.measure();
+                mag6.measure();
+                mag7.measure();
+                
+
+                        //float J [18][6] = {0.0f};
+                 //float b_meas [6][3] = {0.0};
+
+                b_meas[0][0] = mag1.val_x_offset;   b_meas[0][1] = mag1.val_y_offset;   b_meas[0][2] = mag1.val_z_offset;
+                b_meas[1][0] = mag2.val_x_offset;   b_meas[1][1] = mag2.val_y_offset;   b_meas[1][2] = mag2.val_z_offset;
+                b_meas[2][0] = mag4.val_x_offset;   b_meas[2][1] = mag4.val_y_offset;   b_meas[2][2] = mag4.val_z_offset;
+                b_meas[3][0] = mag5.val_x_offset;   b_meas[3][1] = mag5.val_y_offset;   b_meas[3][2] = mag5.val_z_offset;
+                b_meas[4][0] = mag6.val_x_offset;   b_meas[4][1] = mag6.val_y_offset;   b_meas[4][2] = mag6.val_z_offset;
+                b_meas[5][0] = mag7.val_x_offset;   b_meas[5][1] = mag7.val_y_offset;   b_meas[5][2] = mag7.val_z_offset;
+                //Serial.printf("\nmag7x:%f bmeas[5][0]:%f",mag7.val_x_offset,b_meas[5][0]);
+        }
+
+        void get_mag_error(BMCS csIn, BMMagnetometer magIn, float err_buff[3]) {
+            float rbuff [3] = {csIn.rx,csIn.ry,csIn.rz};
+            //float magpos[3];
+            //float magr[3];
+
+            float RMag [3][3];
+            float RMagT [3][3];
+            float b_calc_m[3];
+            float b_calc[3];
+            rot_matrix(rbuff, RMag);
+            trans_matrix(RMag,RMagT);
+
+            float magPos_buff[3] = {magIn.cs.x - csIn.x,    magIn.cs.y - csIn.y,    magIn.cs.z - csIn.z};
+            float magPos_m_buff[3];
+            rot_vector(magPos_buff, magPos_m_buff, RMagT);
+
+            b_calc_m[0] = magnet.Bx(magPos_m_buff[0], magPos_m_buff[1], magPos_m_buff[2]);
+            b_calc_m[1] = magnet.By(magPos_m_buff[0], magPos_m_buff[1], magPos_m_buff[2]);
+            b_calc_m[2] = magnet.Bz(magPos_m_buff[0], magPos_m_buff[1], magPos_m_buff[2]);
+            rot_vector(b_calc_m, b_calc, RMag);
+
+
+            err_buff[0] =  b_calc[0] - magIn.val_x_offset;  
+            err_buff[1] =  b_calc[1] - magIn.val_y_offset;  
+            err_buff[2] =  b_calc[2] - magIn.val_z_offset;  
+
+            if(true){
+                Serial.printf("\nsensor: xcalc:%f xmeas:%f    ycalc:%f ymeas:%f    zcalc:%f zmeas:%f", b_calc[0], magIn.val_x_offset,b_calc[1], magIn.val_y_offset, b_calc[2], magIn.val_z_offset);
+                Serial.printf("  xyz = %f %f %f ",magPos_m_buff[0], magPos_m_buff[1], magPos_m_buff[2]);
+                Serial.printf("   err xyz: %f %f %f " , err_buff[0], err_buff[1], err_buff[2]);
+            }
+
+
+            
         }
 
 
@@ -807,7 +872,7 @@ class BMSystem: public BMObject {
             float b_calc_m[3];
             float b_calc[3];
 
-            float b_meas [6][3] = {0.0};
+            //float b_meas [6][3] = {0.0};
             BMCS css [6] = {mag1.cs, mag2.cs, mag4.cs, mag5.cs, mag6.cs, mag7.cs};
 
             //change this to be triggered on mag theshold?
@@ -820,6 +885,8 @@ class BMSystem: public BMObject {
                 rot_matrix(magr, RMag);
                 trans_matrix(RMag,RMagT);
 
+                take_measurements();
+                /*
                 mag1.measure();
                 mag2.measure();
                 mag4.measure();
@@ -833,6 +900,9 @@ class BMSystem: public BMObject {
                 b_meas[3][0] = mag5.val_x_offset;   b_meas[3][1] = mag5.val_y_offset;   b_meas[3][2] = mag5.val_z_offset;
                 b_meas[4][0] = mag6.val_x_offset;   b_meas[4][1] = mag6.val_y_offset;   b_meas[4][2] = mag6.val_z_offset;
                 b_meas[5][0] = mag7.val_x_offset;   b_meas[5][1] = mag7.val_y_offset;   b_meas[5][2] = mag7.val_z_offset;
+                */
+
+
                 Serial.println("\n----------------------------------------------------------------------");
                 for(int i = 0; i<6; i++) {
                     BMCS magcs = (BMCS)css[i];
@@ -894,6 +964,57 @@ class BMSystem: public BMObject {
 
 
 
+
+                delay(100);
+            }
+
+
+
+        }
+
+        void mag_test_3 (void) {
+
+            delay(5000);
+
+            magnet = BMRectPM(BMCS(),0.0381, 0.01265, 0.00325, 981500.0);
+
+            //Focus on just mag2 for now
+            for (int i = 0; i<100; i++) {
+            mag1.measure();
+            mag2.measure();
+            mag4.measure();
+            mag5.measure();
+            mag6.measure();
+            mag7.measure();
+            delay(5);
+            }
+
+
+            mag1.set_offsets(10);
+            mag2.set_offsets(10);
+            mag4.set_offsets(10);
+            mag5.set_offsets(10);
+            mag6.set_offsets(10);
+            mag7.set_offsets(10);
+            Serial.println("finisehd setting offsets");
+
+            delay(5000);
+
+            float magbuff[6] = {0.0, 0.171, 0.00325/2.0, 90.0, 0.0, 0.0};
+            BMCS css [6] = {mag1.cs, mag2.cs, mag4.cs, mag5.cs, mag6.cs, mag7.cs};
+
+            //change this to be triggered on mag theshold?
+            while(1) {
+                // Vector pointing from Magnet to magnetomoter in system CS
+                magnet.cs.setState(magbuff);
+                take_measurements();
+                float err_buff[3] = {0.0};
+
+                Serial.println("\n----------------------------------------------------------------------");
+                get_mag_error(magnet.cs,mag2,err_buff);
+                Serial.printf("eb2:%f",err_buff[2]);
+
+                //magPos_buff[0] = mag2.cs.x - magnet.cs.x;   magPos_buff[0] = mag2.cs.x - magnet.cs.x;   
 
                 delay(100);
             }

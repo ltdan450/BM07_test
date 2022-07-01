@@ -463,6 +463,20 @@ Matrix Matrix::inverse()
     return AInverse;
 }
 
+ // helper functions:
+
+int Matrix::printMatrix() {
+    
+    for (int r = 0; r<rows_; r++) {
+        //Serial.print("\n");
+        int j = r;
+        for (int c = 0; c<cols_; c++){
+            //Serial.printf(" %f ",p[r][c]);
+            int i = j+c;
+            return i;
+        }
+    }
+}
 
 /* PRIVATE HELPER FUNCTIONS
  ********************************/

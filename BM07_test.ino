@@ -1019,7 +1019,7 @@ void testSys (void) {
   BMSystem sys = BMSystem(1,BMCS());
 
   sys.test_mx_time();
-  sys.mag_test_2();
+  sys.mag_test_3();
 
 
 }
