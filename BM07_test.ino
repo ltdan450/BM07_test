@@ -1028,6 +1028,7 @@ void setup()
 {
     Serial.begin(230400);
   while (!Serial); 
+  Serial.flush();
   Serial.println("Setup started");
   pinMode(RESET_MC, OUTPUT);
   pinMode(SW1, INPUT);

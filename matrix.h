@@ -47,6 +47,9 @@ class Matrix {
 
         // helper functinos
         int printMatrix();
+        int get_rows();
+        int get_cols();
+        
 
     private:
         int rows_, cols_;

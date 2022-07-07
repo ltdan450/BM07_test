@@ -4,6 +4,7 @@
 
 #include <stdexcept>
 #include "matrix.h"
+#include "Print.h"
 
 #define EPS 1e-10
 
@@ -468,7 +469,7 @@ Matrix Matrix::inverse()
 int Matrix::printMatrix() {
     
     for (int r = 0; r<rows_; r++) {
-        //Serial.print("\n");
+        //Serial.printf("\n");
         int j = r;
         for (int c = 0; c<cols_; c++){
             //Serial.printf(" %f ",p[r][c]);
@@ -478,11 +479,22 @@ int Matrix::printMatrix() {
     }
 }
 
+int Matrix::get_rows() {
+    return rows_;
+} 
+
+int Matrix::get_cols() {
+    return cols_;
+} 
+
+
+
 /* PRIVATE HELPER FUNCTIONS
  ********************************/
 
 void Matrix::allocSpace()
 {
+
     p = new float*[rows_];
     for (int i = 0; i < rows_; ++i) {
         p[i] = new float[cols_];
