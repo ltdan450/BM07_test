@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include "matrix.h"
 #include "Print.h"
+#include "math.h"
 
 #define EPS 1e-10
 
@@ -161,6 +162,11 @@ Matrix Matrix::transpose()
 }
 
 
+
+
+
+
+
 /* STATIC CLASS FUNCTIONS
  ********************************/
 
@@ -261,6 +267,19 @@ float Matrix::dotProduct(Matrix a, Matrix b)
     }
     return sum;
 }
+
+
+float Matrix::mean() {
+    float sum = 0;
+    for (int i = 0; i < rows_; ++i) {
+        for (int j = 0; j < cols_; ++j) {
+            sum += p[i][j]*p[i][j];
+            }
+
+            }
+            return  sqrtf(sum)/((float)(rows_));
+}
+
 
 // functions on AUGMENTED matrices
 Matrix Matrix::augment(Matrix A, Matrix B)

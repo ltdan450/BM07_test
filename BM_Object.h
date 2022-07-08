@@ -336,7 +336,9 @@ class BMSensor: public BMObject {
             cs = cs_in;
         }
 
-
+        float get_norm_offset () {
+            return sqrtf(val_x_offset * val_x_offset + val_y_offset * val_y_offset + val_z_offset * val_z_offset);
+        }
 
         virtual void measure (void) {
             Serial.println("need to implement overridden measure function in subclass");
@@ -378,12 +380,15 @@ class BMMagnetometer: public BMSensor {
     public:
 
         float ctr [3] = {0.0};
+        int id;
+        float wt; 
 
         BMMagnetometer(){}
 
-        BMMagnetometer(BMCS cs_in, uint8_t i2cbus_in, int i2c_address_in) :
+        BMMagnetometer(BMCS cs_in, uint8_t i2cbus_in, int i2c_address_in, int id_in) :
             BMSensor(cs_in,i2cbus_in,i2c_address_in){
-
+                id = id_in;
+                wt = 1.0f;
         };
 
         void calibrate(float*xyz_in,  int n, int method) {
@@ -414,8 +419,8 @@ class BMMMC5603NJ: public BMMagnetometer {
         uint8_t inbuff [9];
         BMMMC5603NJ(){}
 
-        BMMMC5603NJ(BMCS cs_in, uint8_t i2cbus_in) :
-            BMMagnetometer(cs_in,i2cbus_in,MMC5603NJ_ADDR){
+        BMMMC5603NJ(BMCS cs_in, uint8_t i2cbus_in, int id_in) :
+            BMMagnetometer(cs_in,i2cbus_in,MMC5603NJ_ADDR, id_in){
         }
 
         void measure () override {
@@ -481,8 +486,8 @@ class BMQMC5883P: public BMMagnetometer {
         uint8_t inbuff [9];
 
         BMQMC5883P(){}
-        BMQMC5883P(BMCS cs_in, uint8_t i2cbus_in) :
-            BMMagnetometer(cs_in,i2cbus_in,QMC5883P_ADDR){
+        BMQMC5883P(BMCS cs_in, uint8_t i2cbus_in, int id_in) :
+            BMMagnetometer(cs_in,i2cbus_in,QMC5883P_ADDR, id_in){
         }
 
         void config_QMC5883P () {
@@ -609,6 +614,9 @@ class BMSystem: public BMObject {
         float R_T [3][3];
         float err [3];
 
+        BMMagnetometer sorted_mags [6];
+
+
 
         BMSystem(){}
         BMSystem(int config, BMCS cs_in){
@@ -616,27 +624,27 @@ class BMSystem: public BMObject {
             trial_cs = BMCS();
             if (config == 1) {
 
-                mag1 = BMMMC5603NJ(BMCS(),6);
+                mag1 = BMMMC5603NJ(BMCS(),6,1);
                 mag1.cs.x = -.0429125; mag1.cs.y = 0.0;   mag1.cs.z = 0.0;
 
-                mag2 = BMMMC5603NJ(BMCS(),4);
+                mag2 = BMMMC5603NJ(BMCS(),4,2);
                 mag2.cs.x = 0.0000875; mag2.cs.y = 0.065;   mag2.cs.z = 0.0;
 
                 //BMMMC5603NJ mag3 = BMMMC5603NJ(ref,6);
                 //mag1.cs.x = -.0429125; mag1.cs.y = 0.0;   mag1.cs.z = 0.0;
 
-                mag4 = BMMMC5603NJ(BMCS(),2);
+                mag4 = BMMMC5603NJ(BMCS(),2,3);
                 mag4.cs.x = 0.0440875; mag4.cs.y = -0.0006;   mag4.cs.z = 0.0;
 
-                mag5 = BMQMC5883P(BMCS(),7);
+                mag5 = BMQMC5883P(BMCS(),7,4);
                 mag5.cs.x = -0.0125; mag5.cs.y = -0.0209;   mag5.cs.z = 0.0;
                 mag5.config_QMC5883P();
 
-                mag6 = BMQMC5883P(BMCS(),5);
+                mag6 = BMQMC5883P(BMCS(),5,5);
                 mag6.cs.x = -0.0399; mag6.cs.y = 0.056;   mag6.cs.z = 0.0;
                 mag6.config_QMC5883P();
 
-                mag7 = BMQMC5883P(BMCS(),3);
+                mag7 = BMQMC5883P(BMCS(),3,6);
                 mag7.cs.x = 0.04009; mag7.cs.y = 0.0560;   mag7.cs.z = 0.0;
                 mag7.config_QMC5883P();
 
@@ -647,12 +655,12 @@ class BMSystem: public BMObject {
                 gyr = BMLSM6DS3_Gyroscope(BMCS());
                 gyr.cs.x = 0.0; gyr.cs.y = 0.0; gyr.cs.z = 0.0;    
 
-                J = Matrix(18,6);
-                R0 = Matrix(18,1);
+                J = Matrix(18-3,6);
+                R0 = Matrix(18-3,1);
 
                 
 
-                for (int i = 0; i <18; i++) {
+                for (int i = 0; i <18-3; i++) {
                     for (int j = 0; j < 6; j++){
                         J(i,j) = 0.0;
                     }
@@ -741,6 +749,7 @@ class BMSystem: public BMObject {
         }
 
         void take_measurements(){
+                bool verbose = true;
                 mag1.measure();
                 mag2.measure();
                 mag4.measure();
@@ -758,6 +767,13 @@ class BMSystem: public BMObject {
                 b_meas[3][0] = mag5.val_x_offset;   b_meas[3][1] = mag5.val_y_offset;   b_meas[3][2] = mag5.val_z_offset;
                 b_meas[4][0] = mag6.val_x_offset;   b_meas[4][1] = mag6.val_y_offset;   b_meas[4][2] = mag6.val_z_offset;
                 b_meas[5][0] = mag7.val_x_offset;   b_meas[5][1] = mag7.val_y_offset;   b_meas[5][2] = mag7.val_z_offset;
+
+                if (verbose){
+                    Serial.println("measure");
+                    for (int i = 0; i <6 ; i++){
+                        printf("\n n:%d = %f %f %f \n", i, b_meas[i][0], b_meas[i][1], b_meas[i][2]);
+                }
+                }
                 //Serial.printf("\nmag1x:%f bmeas[0][0]:%f",mag1.val_x_offset,b_meas[0][0]);
         }
 
@@ -783,11 +799,15 @@ class BMSystem: public BMObject {
             rot_vector(b_calc_m, b_calc, RMag);
 
 
-            err_buff[0] =  b_calc[0] - magIn.val_x_offset;  
-            err_buff[1] =  b_calc[1] - magIn.val_y_offset;  
-            err_buff[2] =  b_calc[2] - magIn.val_z_offset;  
+            err_buff[0] =  (b_calc[0] - magIn.val_x_offset)*magIn.wt;  
+            err_buff[1] =  (b_calc[1] - magIn.val_y_offset)*magIn.wt;  
+            err_buff[2] =  (b_calc[2] - magIn.val_z_offset)*magIn.wt;  
 
-            if(false){
+            //err_buff[0] = err_buff[0] * err_buff[0] * err_buff[0];
+            //err_buff[1] = err_buff[1] * err_buff[1] * err_buff[1];
+            //err_buff[2] = err_buff[2] * err_buff[2] * err_buff[2];
+
+            if(magIn.cs.x == 0.0000875){
                 Serial.printf("\nsensor: xcalc:%f xmeas:%f    ycalc:%f ymeas:%f    zcalc:%f zmeas:%f", b_calc[0], magIn.val_x_offset,b_calc[1], magIn.val_y_offset, b_calc[2], magIn.val_z_offset);
                 Serial.printf("  xyz = %f %f %f ",magPos_buff[0], magPos_buff[1], magPos_buff[2]);
                 Serial.printf("   err xyz: %f %f %f " , err_buff[0], err_buff[1], err_buff[2]);
@@ -795,6 +815,31 @@ class BMSystem: public BMObject {
 
 
             
+        }
+
+        float get_ext_field(){
+            //take_measurements();
+            float field_out = 0.0f;
+            float m1 = mag1.get_norm_offset();
+            float m2 = mag2.get_norm_offset();
+            float m4 = mag4.get_norm_offset();
+            float m5 = 0.0f; //mag5.get_norm_offset();
+            float m6 = mag6.get_norm_offset();
+            float m7 = mag7.get_norm_offset();
+
+            float norms [6] = {m1, m2, m4, m5, m6, m7};
+            std::sort(norms, norms + 6, std::greater<float>());
+
+            Serial.println("Norms: ");
+            for (int i = 0; i < 6; i++){
+                Serial.printf(" %f ", norms[i]);
+            }
+
+            
+
+
+
+            return norms[0];
         }
 
         void set_jacobian(BMCS csIn){
@@ -807,13 +852,13 @@ class BMSystem: public BMObject {
             bool verbose = false;
 
             //populate the matrix for magnetometer 1
-            for (int i = 0 ; i < 6; i++) {
+            for (int i = 0 ; i < 5; i++) {
                 if (i == 0) mag = mag1;
                 else if (i == 1) mag = mag2;
                 else if (i == 2) mag = mag4;
-                else if (i == 3) mag = mag5;
-                else if (i == 4) mag = mag6;
-                else if (i == 5) mag = mag7;
+                //else if (i == 3) mag = mag5;
+                else if (i == 3) mag = mag6;
+                else if (i == 4) mag = mag7;
 
                 get_mag_error(csIn, mag, err_zero);
                 c_ref = i * 3 + 0;
@@ -1108,17 +1153,17 @@ class BMSystem: public BMObject {
 
             
 
-            mag1.set_offsets(10);
-            mag2.set_offsets(10);
-            mag4.set_offsets(10);
-            mag5.set_offsets(10);
-            mag6.set_offsets(10);
-            mag7.set_offsets(10);
+            mag1.set_offsets(100);
+            mag2.set_offsets(100);
+            mag4.set_offsets(100);
+            mag5.set_offsets(100);
+            mag6.set_offsets(100);
+            mag7.set_offsets(100);
             Serial.println("finished setting offsets");
 
             delay(3000);
 
-            float magbuff[6] = {0.0, 0.171, 0.00325/2.0, 90.0, 0.0, 0.0};
+            float magbuff[6] = {0.0, 0.171, 0.00325/2.0, -180.0, 0.0, 0.0};
             BMCS css [6] = {mag1.cs, mag2.cs, mag4.cs, mag5.cs, mag6.cs, mag7.cs};
 
             //change this to be triggered on mag theshold?
@@ -1127,46 +1172,83 @@ class BMSystem: public BMObject {
             Matrix left_pseudoinv_J;
             Matrix update_matrix;
             int t0;
+
             while(1) {
                 // Vector pointing from Magnet to magnetomoter in system CS
                 
                 t0 = millis();
                 take_measurements();
-                Serial.printf("\n millis:%d",millis()-t0);
-                float err_buff[3] = {0.0};
-                set_jacobian(magnet.cs); 
-                Serial.printf("\n millis:%d",millis()-t0);
-                //print_matrix(J);
-                J_T = J.transpose();
-                left_pseudoinv_J = (Matrix)(J_T * J).inverse() * J_T;
-                Serial.printf("\n millis:%d",millis()-t0);
+                float error = 1000.0;
+                float norm = get_ext_field();
 
-                //print_matrix(left_pseudoinv_J); 
-
-                update_matrix = left_pseudoinv_J * R0;
-                Serial.printf("\n millis:%d",millis()-t0);
-
-                //print_matrix(update_matrix);
-                magnet.cs.print_state();
-                magnet.cs.x -= min(fabs(update_matrix(0,0)),0.001f) * (float)((update_matrix(0,0) >= 0.0) - (update_matrix(0,0) < 0.0));//update_matrix(0,0);
-                magnet.cs.y -= min(fabs(update_matrix(1,0)),0.001f) * (float)((update_matrix(1,0) >= 0.0) - (update_matrix(1,0) < 0.0)); //update_matrix(1,0);
-                magnet.cs.z -= min(fabs(update_matrix(2,0)),0.001f) * (float)((update_matrix(2,0) >= 0.0) - (update_matrix(2,0) < 0.0)); //update_matrix(2,0);
-                magnet.cs.rx -= min(fabs(update_matrix(3,0)),1.0f) * (float)((update_matrix(3,0) >= 0.0) - (update_matrix(3,0) < 0.0)); //update_matrix(3,0);
-                magnet.cs.ry -= min(fabs(update_matrix(4,0)),1.0f) * (float)((update_matrix(4,0) >= 0.0) - (update_matrix(4,0) < 0.0));  //update_matrix(4,0);
-                magnet.cs.rz -= min(fabs(update_matrix(5,0)),1.0f) * (float)((update_matrix(5,0) >= 0.0) - (update_matrix(5,0) < 0.0)); //update_matrix(5,0);
-                //magnet.cs.print_state();
-
-
-
-
-
-                //get_mag_error(magnet.cs,mag2,err_buff);
+                //Serial.printf("\n field_norm:%f", norm);
                 
+                if (norm>50.0) {
+                    int evals = 0;
+                    while((error>20.0) && (evals++ < 1000)) {
+                        t0 = millis();
+                        mag1.wt = 01.0;
+                        mag2.wt = 01.0;
+                        mag4.wt = 01.0;
+                        mag5.wt = 01.0;
+                        mag6.wt = 01.0;
+                        mag7.wt = 01.0;
 
-                //magPos_buff[0] = mag2.cs.x - magnet.cs.x;   magPos_buff[0] = mag2.cs.x - magnet.cs.x;   
-                Serial.println("\n----------------------------------------------------------------------");
-                delay(10);
-            }
+
+                        //Serial.printf("\n millis:%d",millis()-t0);
+                        //float err_buff[3] = {0.0};
+                        set_jacobian(magnet.cs); 
+                        //print_matrix(R0.transpose());
+                        //Serial.printf("\n millis:%d",millis()-t0);
+                        //print_matrix(J);
+                        J_T = J.transpose();
+                        left_pseudoinv_J = (Matrix)(J_T * J).inverse() * J_T;
+                        //Serial.printf("\n millis:%d",millis()-t0);
+
+                        //print_matrix(left_pseudoinv_J); 
+
+                        update_matrix = (left_pseudoinv_J * R0) * 0.25f;
+
+                        //Serial.printf("\n millis:%d",millis()-t0);
+
+                        //print_matrix(update_matrix);
+                        error = R0.mean();
+                        //Serial.printf("\neval: %d err:%f", evals, error);
+                    
+                        //magnet.cs.print_state();
+                        if (false){
+                            magnet.cs.x -= min(fabs(update_matrix(0,0)),0.001f) * (float)((update_matrix(0,0) >= 0.0) - (update_matrix(0,0) < 0.0));//update_matrix(0,0);
+                            magnet.cs.y -= min(fabs(update_matrix(1,0)),0.001f) * (float)((update_matrix(1,0) >= 0.0) - (update_matrix(1,0) < 0.0)); //update_matrix(1,0);
+                            magnet.cs.z -= min(fabs(update_matrix(2,0)),0.001f) * (float)((update_matrix(2,0) >= 0.0) - (update_matrix(2,0) < 0.0)); //update_matrix(2,0);
+                            magnet.cs.rx -= min(fabs(update_matrix(3,0)),1.0f) * (float)((update_matrix(3,0) >= 0.0) - (update_matrix(3,0) < 0.0)); //update_matrix(3,0);
+                            magnet.cs.ry -= min(fabs(update_matrix(4,0)),1.0f) * (float)((update_matrix(4,0) >= 0.0) - (update_matrix(4,0) < 0.0));  //update_matrix(4,0);
+                            magnet.cs.rz -= min(fabs(update_matrix(5,0)),1.0f) * (float)((update_matrix(5,0) >= 0.0) - (update_matrix(5,0) < 0.0)); //update_matrix(5,0);
+                        }
+                        else {
+                            magnet.cs.x -= update_matrix(0,0);
+                            magnet.cs.y -= update_matrix(1,0);
+                            magnet.cs.z -= update_matrix(2,0);
+                            magnet.cs.rx -= update_matrix(3,0)*0.0;
+                            magnet.cs.ry -= update_matrix(4,0)*0.0;
+                            magnet.cs.rz -= update_matrix(5,0)*0.0;
+                        }
+                        Serial.printf("\n millis:%d",millis()-t0);
+                        //magnet.cs.print_state();
+
+
+
+
+
+                        //get_mag_error(magnet.cs,mag2,err_buff);
+                        
+
+                        //magPos_buff[0] = mag2.cs.x - magnet.cs.x;   magPos_buff[0] = mag2.cs.x - magnet.cs.x;   
+                        Serial.println("\n----------------------------------------------------------------------");
+                        delay(10);
+                    }
+                }
+                delay(100);
+            }   
 
 
 

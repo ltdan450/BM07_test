@@ -49,7 +49,8 @@ class Matrix {
         int printMatrix();
         int get_rows();
         int get_cols();
-        
+        float mean();
+
 
     private:
         int rows_, cols_;
