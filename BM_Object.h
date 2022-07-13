@@ -6,6 +6,11 @@
 
 #include "matrix.h" //https://github.com/akalicki/matrix
 
+//extern int g_order_sys, g_stat_sys, g_order_com, g_stat_com;
+
+
+
+
 class BMCS {
     public:
         float x,y,z = 0.0f;
@@ -616,6 +621,7 @@ class BMSystem: public BMObject {
 
         BMMagnetometer sorted_mags [6];
 
+        //QueueHandle_t output_queue;
 
 
         BMSystem(){}
@@ -941,7 +947,7 @@ class BMSystem: public BMObject {
             mag2.set_offsets(10);
 
             delay(1000);
-
+            
             while(1) {
                 // Vector pointing from Magnet to magnetomoter in system CS
                 Serial.println("\n----------------------------------------------------------------------");
@@ -1172,6 +1178,7 @@ class BMSystem: public BMObject {
             Matrix left_pseudoinv_J;
             Matrix update_matrix;
             int t0;
+            float out_buff[24] = {0.0};
 
             while(1) {
                 // Vector pointing from Magnet to magnetomoter in system CS
@@ -1180,12 +1187,13 @@ class BMSystem: public BMObject {
                 take_measurements();
                 float error = 1000.0;
                 float norm = get_ext_field();
+                float delta_x_norm;
 
-                //Serial.printf("\n field_norm:%f", norm);
+                Serial.printf("\n field_norm:%f", norm);
                 
                 if (norm>50.0) {
                     int evals = 0;
-                    while((error>20.0) && (evals++ < 1000)) {
+                    while((error>20.0) && (evals++ < 100)) {
                         t0 = millis();
                         mag1.wt = 01.0;
                         mag2.wt = 01.0;
@@ -1232,8 +1240,10 @@ class BMSystem: public BMObject {
                             magnet.cs.ry -= update_matrix(4,0)*0.0;
                             magnet.cs.rz -= update_matrix(5,0)*0.0;
                         }
-                        Serial.printf("\n millis:%d",millis()-t0);
-                        //magnet.cs.print_state();
+                        //Serial.printf("\n millis:%d",millis()-t0);
+                        magnet.cs.print_state();
+                        delta_x_norm = sqrtf(update_matrix(0,0)*update_matrix(0,0) + update_matrix(1,0)*update_matrix(1,0) + update_matrix(2,0)*update_matrix(2,0));
+                        Serial.printf("\n delta_x_norm:%f",delta_x_norm);
 
 
 
@@ -1274,6 +1284,7 @@ class BMSystem: public BMObject {
         float R_old [3][3] = {0.0};
         //float old_r_xyz [3];
 };
+
 
 
 
