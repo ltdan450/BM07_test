@@ -314,6 +314,7 @@ class BMSensor: public BMObject {
         float y_offset=0.0;
         float z_offset=0.0;
         float x_sum, y_sum, z_sum;
+        float norm;
 
         BMSensor(){}
 
@@ -342,7 +343,8 @@ class BMSensor: public BMObject {
         }
 
         float get_norm_offset () {
-            return sqrtf(val_x_offset * val_x_offset + val_y_offset * val_y_offset + val_z_offset * val_z_offset);
+            norm  =  sqrtf(val_x_offset * val_x_offset + val_y_offset * val_y_offset + val_z_offset * val_z_offset);
+            return norm;
         }
 
         virtual void measure (void) {
@@ -621,7 +623,7 @@ class BMSystem: public BMObject {
 
         BMMagnetometer sorted_mags [6];
 
-        //QueueHandle_t output_queue;
+        QueueHandle_t output_queue;
 
 
         BMSystem(){}
@@ -755,7 +757,7 @@ class BMSystem: public BMObject {
         }
 
         void take_measurements(){
-                bool verbose = true;
+                bool verbose = false;
                 mag1.measure();
                 mag2.measure();
                 mag4.measure();
@@ -777,7 +779,7 @@ class BMSystem: public BMObject {
                 if (verbose){
                     Serial.println("measure");
                     for (int i = 0; i <6 ; i++){
-                        printf("\n n:%d = %f %f %f \n", i, b_meas[i][0], b_meas[i][1], b_meas[i][2]);
+                        Serial.printf("\n n:%d = %f %f %f \n", i, b_meas[i][0], b_meas[i][1], b_meas[i][2]);
                 }
                 }
                 //Serial.printf("\nmag1x:%f bmeas[0][0]:%f",mag1.val_x_offset,b_meas[0][0]);
@@ -825,6 +827,7 @@ class BMSystem: public BMObject {
 
         float get_ext_field(){
             //take_measurements();
+            bool verbose = false;
             float field_out = 0.0f;
             float m1 = mag1.get_norm_offset();
             float m2 = mag2.get_norm_offset();
@@ -835,10 +838,11 @@ class BMSystem: public BMObject {
 
             float norms [6] = {m1, m2, m4, m5, m6, m7};
             std::sort(norms, norms + 6, std::greater<float>());
-
-            Serial.println("Norms: ");
-            for (int i = 0; i < 6; i++){
-                Serial.printf(" %f ", norms[i]);
+            if (verbose) {
+                Serial.println("Norms: ");
+                for (int i = 0; i < 6; i++){
+                    Serial.printf(" %f ", norms[i]);
+                }
             }
 
             
@@ -849,7 +853,7 @@ class BMSystem: public BMObject {
         }
 
         void set_jacobian(BMCS csIn){
-            float eps = 5e-4;
+            float eps = .0002;
             float err_buff [3] = {0.0f};
             float err_zero [3]  = {0.0f};
             BMCS cs_buff = BMCS();
@@ -936,7 +940,7 @@ class BMSystem: public BMObject {
 
             //BMRectPM testmag = BMRectPM();
             //testmag.BZTest1();
-            delay(5000);
+            vTaskDelay(5000);
 
             magnet = BMRectPM(BMCS(),0.0381, 0.01265, 0.00325,957560.5428);
             magnet.cs.x = 0.000;    magnet.cs.y = 0.171;        magnet.cs.z = 0.00325/2.0;
@@ -946,7 +950,7 @@ class BMSystem: public BMObject {
             //Focus on just mag2 for now
             mag2.set_offsets(10);
 
-            delay(1000);
+            vTaskDelay(1000);
             
             while(1) {
                 // Vector pointing from Magnet to magnetomoter in system CS
@@ -977,7 +981,7 @@ class BMSystem: public BMObject {
                 Serial.printf("\nCalc BX:%f BY:%f BZ:%f",BX_calc, BY_calc, BZ_calc);
                 Serial.printf("\nCalc BX:%f BY:%f BZ:%f in system cs",b_calc_mag2[0], b_calc_mag2[1], b_calc_mag2[2]);
                 mag2.measure();
-                delay(10);
+                vTaskDelay(10);
                 Serial.printf("\nMeas BX:%f BY:%f BZ:%f",mag2.val_x_offset, mag2.val_y_offset, mag2.val_z_offset);
                 Serial.printf("\nratios: %f %f %f", mag2.val_x_offset/BX_calc, mag2.val_y_offset/BY_calc, mag2.val_z_offset/BZ_calc);
                 
@@ -985,7 +989,7 @@ class BMSystem: public BMObject {
 
 
 
-                delay(100);
+                vTaskDelay(100);
             }
 
 
@@ -997,7 +1001,7 @@ class BMSystem: public BMObject {
 
             //BMRectPM testmag = BMRectPM();
             //testmag.BZTest1();
-            delay(5000);
+            vTaskDelay(5000);
 
             magnet = BMRectPM(BMCS(),0.0381, 0.01265, 0.00325, 981500.0);
             //magnet.cs.x = 0.000;    magnet.cs.y = 0.171;        magnet.cs.z = 0.00325/2.0;
@@ -1012,7 +1016,7 @@ class BMSystem: public BMObject {
             mag5.measure();
             mag6.measure();
             mag7.measure();
-            delay(5);
+            vTaskDelay(5);
             }
 
 
@@ -1025,7 +1029,7 @@ class BMSystem: public BMObject {
 
             Serial.println("finisehd setting offsets");
 
-            delay(5000);
+            vTaskDelay(5000);
 
             float magbuff[6] = {0.0, 0.171, 0.00325/2.0, 90.0, 0.0, 0.0};
             float magpos[3];
@@ -1167,9 +1171,9 @@ class BMSystem: public BMObject {
             mag7.set_offsets(100);
             Serial.println("finished setting offsets");
 
-            delay(3000);
+            vTaskDelay(3000);
 
-            float magbuff[6] = {0.0, 0.171, 0.00325/2.0, -180.0, 0.0, 0.0};
+            float magbuff[6] = {0.0, 0.171, 0.00325/2.0, -180.0, 0.0, 90.0};
             BMCS css [6] = {mag1.cs, mag2.cs, mag4.cs, mag5.cs, mag6.cs, mag7.cs};
 
             //change this to be triggered on mag theshold?
@@ -1180,6 +1184,8 @@ class BMSystem: public BMObject {
             int t0;
             float out_buff[24] = {0.0};
 
+
+
             while(1) {
                 // Vector pointing from Magnet to magnetomoter in system CS
                 
@@ -1189,12 +1195,21 @@ class BMSystem: public BMObject {
                 float norm = get_ext_field();
                 float delta_x_norm;
 
-                Serial.printf("\n field_norm:%f", norm);
-                
+                //Serial.printf("\n field_norm:%f", norm);
+
+                #define MAX_EVALS 100
+                float errs[MAX_EVALS+1] = {0.0};
+                float dx_norms[MAX_EVALS+1] = {0.0};
+
+                bool pos_found = false;
                 if (norm>50.0) {
-                    int evals = 0;
-                    while((error>20.0) && (evals++ < 100)) {
-                        t0 = millis();
+                    pos_found = false;
+                    int evals = -1;
+                    delta_x_norm = 1.0;
+                    t0 = millis();
+                    float w = 1.0;
+                    while((!pos_found) && (evals++ < MAX_EVALS)) {     //while((error>20.0) && (evals++ < 100)) {
+                        
                         mag1.wt = 01.0;
                         mag2.wt = 01.0;
                         mag4.wt = 01.0;
@@ -1202,28 +1217,25 @@ class BMSystem: public BMObject {
                         mag6.wt = 01.0;
                         mag7.wt = 01.0;
 
+                        if(false){
+                           mag1.wt = sqrtf(mag1.norm);
+                           mag2.wt = sqrtf(mag2.norm);
+                           mag4.wt = sqrtf(mag4.norm);
+                           mag5.wt = sqrtf(mag5.norm);
+                           mag6.wt = sqrtf(mag6.norm);
+                           mag7.wt = sqrtf(mag7.norm);
+                        }
 
-                        //Serial.printf("\n millis:%d",millis()-t0);
-                        //float err_buff[3] = {0.0};
+                        float err_buff[3] = {0.0};
                         set_jacobian(magnet.cs); 
-                        //print_matrix(R0.transpose());
-                        //Serial.printf("\n millis:%d",millis()-t0);
-                        //print_matrix(J);
+
                         J_T = J.transpose();
                         left_pseudoinv_J = (Matrix)(J_T * J).inverse() * J_T;
-                        //Serial.printf("\n millis:%d",millis()-t0);
+                        w = max(w-0.01,0.1);
+                        update_matrix = (left_pseudoinv_J * R0) *  w;
+                        error = R0.mean()/(norm);
+                        Serial.printf("\nerr:%f %f %f %f %f %f %f", error, R0(0,0), R0(1,0), R0(2,0), R0(3,0), R0(4,0), R0(5,0));
 
-                        //print_matrix(left_pseudoinv_J); 
-
-                        update_matrix = (left_pseudoinv_J * R0) * 0.25f;
-
-                        //Serial.printf("\n millis:%d",millis()-t0);
-
-                        //print_matrix(update_matrix);
-                        error = R0.mean();
-                        //Serial.printf("\neval: %d err:%f", evals, error);
-                    
-                        //magnet.cs.print_state();
                         if (false){
                             magnet.cs.x -= min(fabs(update_matrix(0,0)),0.001f) * (float)((update_matrix(0,0) >= 0.0) - (update_matrix(0,0) < 0.0));//update_matrix(0,0);
                             magnet.cs.y -= min(fabs(update_matrix(1,0)),0.001f) * (float)((update_matrix(1,0) >= 0.0) - (update_matrix(1,0) < 0.0)); //update_matrix(1,0);
@@ -1240,24 +1252,56 @@ class BMSystem: public BMObject {
                             magnet.cs.ry -= update_matrix(4,0)*0.0;
                             magnet.cs.rz -= update_matrix(5,0)*0.0;
                         }
-                        //Serial.printf("\n millis:%d",millis()-t0);
-                        magnet.cs.print_state();
+
                         delta_x_norm = sqrtf(update_matrix(0,0)*update_matrix(0,0) + update_matrix(1,0)*update_matrix(1,0) + update_matrix(2,0)*update_matrix(2,0));
-                        Serial.printf("\n delta_x_norm:%f",delta_x_norm);
+                        get_mag_error(magnet.cs,mag2,err_buff); 
+                        dx_norms[evals] = delta_x_norm;
+                        errs[evals] = error;
+                        pos_found = ((error <0.005f)||((delta_x_norm <0.001f)&&(error <0.01f)));
 
-
-
-
-
-                        //get_mag_error(magnet.cs,mag2,err_buff);
-                        
-
-                        //magPos_buff[0] = mag2.cs.x - magnet.cs.x;   magPos_buff[0] = mag2.cs.x - magnet.cs.x;   
-                        Serial.println("\n----------------------------------------------------------------------");
-                        delay(10);
+                    if ((magnet.cs.x * magnet.cs.x + magnet.cs.y * magnet.cs.y + magnet.cs.z * magnet.cs.z)>1.0f*1.0f) {
+                        magnet.cs.x = (float)esp_random() / (float)UINT32_MAX - 0.5f;
+                        magnet.cs.y = (float)esp_random() / (float)UINT32_MAX - 0.5f;
+                        magnet.cs.z = (float)esp_random() / (float)UINT32_MAX;
+                        //Serial.printf("\nposition perturbation x_limit to  %f %f %f", magnet.cs.x,magnet.cs.y,magnet.cs.z);                   
                     }
+
+                        //Serial.println("\n----------------------------------------------------------------------");
+                    }
+
+                    Serial.printf("\nx: %f y: %f z:%f rx: %f ry: %f rz:%f delta_x_norm: %f nevals: %d error:%f time: %d w:%f pos:%d", magnet.cs.x, magnet.cs.y, magnet.cs.z,magnet.cs.rx, magnet.cs.ry, magnet.cs.rz, delta_x_norm, evals, error, millis() - t0, w, pos_found);
+                    
+                    if (!pos_found) {
+                        magnet.cs.x = (float)esp_random() / (float)UINT32_MAX - 0.5f;
+                        magnet.cs.y = (float)esp_random() / (float)UINT32_MAX - 0.5f;
+                        magnet.cs.z = (float)esp_random() / (float)UINT32_MAX;
+                        //Serial.printf("\nposition perturbation not_found to %f %f %f", magnet.cs.x,magnet.cs.y,magnet.cs.z);                   
+                    }
+
+                    if (pos_found) {
+                        Serial.printf("\nz: %f",(magnet.cs.z-.133)*1000);
+                        out_buff[0] = magnet.cs.x;
+                        out_buff[1] = magnet.cs.y;
+                        out_buff[2] = magnet.cs.z;
+                        xQueueSend(output_queue,&out_buff,10);
+                    }
+
+                    if (false) {
+                        Serial.print("\n");
+                        for (int i = 0; i < evals; i++) Serial.printf(" %d", i);
+                        Serial.print("\n");
+                        for (int i = 0; i < evals; i++) Serial.printf(" %f", dx_norms[i]);
+                        Serial.print("\n");
+                        for (int i = 0; i < evals; i++) Serial.printf(" %f", errs[i]);
+                    
+                    }
+
+
                 }
-                delay(100);
+                
+
+
+                vTaskDelay(20/ portTICK_PERIOD_MS);
             }   
 
 

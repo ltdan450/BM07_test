@@ -38,7 +38,7 @@ const char * udpAddress = "192.168.0.148";
 boolean connected = false;
 
 //Global variables
-//QueueHandle_t dataqueue;
+QueueHandle_t dataqueue;
 //WiFiUdp udp;
 //WiFiUdp udp;
 WiFiUDP udp;
@@ -58,7 +58,7 @@ int run_mode = 0; // 0 = ready for anything, 1 = enter cal mode, 2 = cal mode ru
 void testSys (void *pvParameters) {
   Wire.begin();
   BMSystem sys = BMSystem(1,BMCS());
-  //sys.output_queue = dataqueue;
+  sys.output_queue = dataqueue;
   sys.test_mx_time();
   while(true) {
     sys.mag_test_3();
@@ -75,13 +75,13 @@ void testCom (void *pvParameters) {
   IPAddress ip;// = WiFi.local
   IPAddress serv_ip = IPAddress();
   WiFi.macAddress();
+  float in_buff[24] = {0.0};
+  char out_buff[128] = {' '};
 
   uint8_t mac[6];
   if(WiFiGenericClass::getMode() == WIFI_MODE_NULL){
       esp_read_mac(mac, ESP_MAC_WIFI_STA);
   }
-
-
 
   while(true) {
     if (connected_wifi == false){
@@ -109,8 +109,8 @@ void testCom (void *pvParameters) {
         uint8_t buffer[50] = "tlick";
         uint8_t inbuff[50] = "      ";
         uint8_t check[6] = "tlock";
-
-        for (uint8_t i = 0; i < 256; i++) {
+        vTaskDelay(5000/portTICK_PERIOD_MS);
+        for (uint8_t i = 0; i < 255; i++) {
           buff_ip[3] = i;
           if (buff_ip[3] != ip[3]) {
             udp.beginPacket(buff_ip, udpPort);
@@ -137,19 +137,29 @@ void testCom (void *pvParameters) {
           }
         }
         Serial.printf("connected_server:%d\n",connected_server);
+        
       }
-  
-      
-    
-
     vTaskDelay(5000/portTICK_PERIOD_MS);
+    }
+
+    if(uxQueueMessagesWaiting(dataqueue)>0){
+      Serial.println("check 2");
+      xQueueReceive(dataqueue,&in_buff,portMAX_DELAY);
+      Serial.println("check 3");
+      udp.beginPacket(serv_ip, udpPort);
+      Serial.println("check 4");
+      sprintf(out_buff, "x:%f:y:%f:z:%f:",in_buff[0],in_buff[1], in_buff[2]);
+      Serial.println("check 45");    
+      udp.write((uint8_t*)out_buff, 128);
+      Serial.println("check 5");
+      udp.endPacket();
+      Serial.println("check 6");
+
     }
 
 
 
-
-
-
+    vTaskDelay(10/portTICK_PERIOD_MS);
   }
 
 
@@ -158,7 +168,7 @@ void testCom (void *pvParameters) {
 
 void setup()
 {
-    Serial.begin(230400);
+    Serial.begin(1000000);
   while (!Serial); 
   Serial.flush();
   Serial.println("Setup started");
@@ -173,7 +183,7 @@ void setup()
   Serial.println("\nI2C Scanner");
   uint16_t a13 = analogRead(A13);
   Serial.printf("\n reading: %d \n", a13);
-  //dataqueue = xQueueCreate(5, 24 * sizeof(float));
+  dataqueue = xQueueCreate(5, 24 * sizeof(float));
 
   //void testCom();
   //delay(5000);
@@ -181,22 +191,22 @@ void setup()
   //testSys();
 
 
-    if (0)
+    if (1)
     xTaskCreatePinnedToCore(
     testCom
     ,  "TaskCommunication"   // A name just for humans
-    ,  10240  // This stack size can be checked & adjusted by reading the Stack Highwater
+    ,  4096  // This stack size can be checked & adjusted by reading the Stack Highwater
     ,  NULL
     ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
     ,  NULL 
-    ,  ARDUINO_RUNNING_CORE);
+    ,  ARDUINO_RUNNING_CORE^1);
 
         xTaskCreatePinnedToCore(
     testSys
     ,  "TaskSystem"   // A name just for humans
     ,  8192  // This stack size can be checked & adjusted by reading the Stack Highwater
     ,  NULL
-    ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
+    ,  3  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
     ,  NULL 
     ,  ARDUINO_RUNNING_CORE);
 
